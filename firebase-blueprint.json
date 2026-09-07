@@ -1,0 +1,77 @@
+{
+  "entities": {
+    "Invoice": {
+      "title": "Invoice",
+      "description": "An invoice managed in ChaserFlow",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "clientCompany": { "type": "string" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "serviceDescription": { "type": "string" },
+        "status": { "type": "string", "enum": ["draft", "sent", "due_soon", "overdue", "paid"] },
+        "paymentLink": { "type": "string" },
+        "remindersSentCount": { "type": "number" },
+        "remindersPaused": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["id", "invoiceNumber", "clientName", "amount", "dueDate", "status", "userId"]
+    },
+    "ReminderLog": {
+      "title": "ReminderLog",
+      "description": "Log of a chaser reminder sent to a client",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "stage": { "type": "string" },
+        "tone": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "sentAt": { "type": "string" },
+        "channel": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "invoiceId", "stage", "tone", "sentAt"]
+    },
+    "UserSettings": {
+      "title": "UserSettings",
+      "description": "User preferences and agency settings",
+      "type": "object",
+      "properties": {
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "businessName": { "type": "string" },
+        "defaultTone": { "type": "string" },
+        "paymentLinkBase": { "type": "string" },
+        "bankDetails": { "type": "string" },
+        "lateFeePercentage": { "type": "number" },
+        "enableLateFeeNotice": { "type": "boolean" },
+        "autoChaseEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["userName", "userEmail"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/invoices/{invoiceId}": {
+      "schema": "#entities/Invoice",
+      "description": "Invoices owned by the user"
+    },
+    "/users/{userId}/invoices/{invoiceId}/logs/{logId}": {
+      "schema": "#entities/ReminderLog",
+      "description": "Reminder dispatch history for an invoice"
+    },
+    "/users/{userId}/settings/user_settings": {
+      "schema": "#entities/UserSettings",
+      "description": "User settings configuration"
+    }
+  }
+}
