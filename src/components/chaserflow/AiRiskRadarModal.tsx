@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Invoice } from '../../types/chaserflow';
+import { useTheme } from '../../context/ThemeContext';
 import { 
   X, 
   Sparkles, 
@@ -94,6 +95,7 @@ export const AiRiskRadarModal: React.FC<AiRiskRadarModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<RiskAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { isLight } = useTheme();
 
   const runAnalysis = async () => {
     setLoading(true);
@@ -231,12 +233,18 @@ export const AiRiskRadarModal: React.FC<AiRiskRadarModalProps> = ({
               </div>
 
               {/* Executive Summary Narrative */}
-              <div className="p-4 bg-gradient-to-r from-purple-950/40 via-slate-800/50 to-indigo-950/40 border border-purple-800/40 rounded-xl">
-                <div className="flex items-center gap-2 mb-1.5 text-xs font-bold text-purple-300">
-                  <Sparkles className="w-3.5 h-3.5" />
+              <div className={`p-4 border rounded-xl ${
+                isLight
+                  ? 'bg-purple-50/90 border-purple-200'
+                  : 'bg-gradient-to-r from-purple-950/40 via-slate-800/50 to-indigo-950/40 border-purple-800/40'
+              }`}>
+                <div className={`flex items-center gap-2 mb-1.5 text-xs font-bold ${
+                  isLight ? 'text-purple-900' : 'text-purple-300'
+                }`}>
+                  <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-purple-700' : 'text-purple-400'}`} />
                   <span>AI Executive Briefing</span>
                 </div>
-                <p className="text-xs text-slate-200 leading-relaxed">
+                <p className={`text-xs leading-relaxed ${isLight ? 'text-slate-800 font-medium' : 'text-slate-200'}`}>
                   {data.executiveSummary}
                 </p>
               </div>
@@ -289,8 +297,8 @@ export const AiRiskRadarModal: React.FC<AiRiskRadarModalProps> = ({
                         </div>
 
                         <div className="text-xs text-slate-300 mb-3 flex items-start gap-1.5">
-                          <span className="text-indigo-400 font-semibold shrink-0">Tactical Move:</span>
-                          <span>{item.recommendation}</span>
+                          <span className={`font-semibold shrink-0 ${isLight ? 'text-indigo-800' : 'text-indigo-400'}`}>Tactical Move:</span>
+                          <span className={isLight ? 'text-slate-700' : 'text-slate-300'}>{item.recommendation}</span>
                         </div>
 
                         {fullInvoice && (

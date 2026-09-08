@@ -3,6 +3,8 @@ import { Invoice, InvoiceStatus } from '../../types/chaserflow';
 import { getClientScoreByEmail } from '../../lib/clientScoring';
 import { generateInvoicePdf, generateReceiptPdf } from '../../lib/pdfGenerator';
 import { DEFAULT_CHASER_SETTINGS } from '../../data/defaultInvoices';
+import { useTheme } from '../../context/ThemeContext';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { 
   Search, 
   CheckCircle2, 
@@ -49,6 +51,8 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | InvoiceStatus>('all');
   const [sortBy, setSortBy] = useState<'urgency' | 'amount_desc' | 'date_desc'>('urgency');
+  const [invoiceToDelete, setInvoiceToDelete] = useState<Invoice | null>(null);
+  const { isLight } = useTheme();
 
   // Filter logic
   const filteredInvoices = invoices.filter(inv => {
@@ -170,10 +174,14 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
 
           <button
             onClick={onOpenRiskRadar}
-            className="px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm"
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow-sm ${
+              isLight
+                ? 'bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 text-indigo-900 font-bold'
+                : 'bg-indigo-950/80 hover:bg-indigo-900 border border-indigo-700/80 text-indigo-300'
+            }`}
             title="Open AI Cashflow Risk Radar"
           >
-            <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+            <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-indigo-700' : 'text-indigo-400'}`} />
             <span className="hidden sm:inline">AI Risk Radar</span>
           </button>
         </div>
@@ -239,10 +247,14 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
                         <button
                           type="button"
                           onClick={() => onOpenClientReliability?.(invoice.clientEmail)}
-                          className="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-purple-950/70 border border-purple-800/80 text-purple-300 hover:bg-purple-900 transition-colors cursor-pointer"
+                          className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border transition-colors cursor-pointer ${
+                            isLight
+                              ? 'bg-purple-100 hover:bg-purple-200 border-purple-300 text-purple-900'
+                              : 'bg-purple-950/70 hover:bg-purple-900 border-purple-800/80 text-purple-300'
+                          }`}
                           title={`Client Reliability: ${clientScore.score}/100 (Tier ${clientScore.tier}). Click to inspect client profile.`}
                         >
-                          <ShieldCheck className="w-2.5 h-2.5 text-purple-400" />
+                          <ShieldCheck className={`w-2.5 h-2.5 ${isLight ? 'text-purple-700' : 'text-purple-400'}`} />
                           <span>Reliability {clientScore.score} ({clientScore.tier})</span>
                         </button>
                       )}
@@ -400,7 +412,8 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
 
                     {/* Delete Invoice */}
                     <button
-                      onClick={() => onDeleteInvoice(invoice.id)}
+                      id={`delete-invoice-${invoice.id}-btn`}
+                      onClick={() => setInvoiceToDelete(invoice)}
                       className="p-2 text-slate-500 hover:text-rose-400 bg-slate-800/50 hover:bg-rose-950/50 rounded-xl transition-colors cursor-pointer"
                       title="Delete Invoice"
                     >
@@ -427,6 +440,17 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
           </p>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmationModal
+        isOpen={!!invoiceToDelete}
+        invoice={invoiceToDelete}
+        onClose={() => setInvoiceToDelete(null)}
+        onConfirmDelete={(invoiceId) => {
+          onDeleteInvoice(invoiceId);
+          setInvoiceToDelete(null);
+        }}
+      />
 
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Invoice, ClientScore } from '../../types/chaserflow';
 import { calculateAllClientScores } from '../../lib/clientScoring';
+import { useTheme } from '../../context/ThemeContext';
 import { 
   X, 
   ShieldCheck, 
@@ -31,6 +32,7 @@ export const ClientReliabilityModal: React.FC<ClientReliabilityModalProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedScore, setSelectedScore] = useState<ClientScore | null>(null);
+  const { isLight } = useTheme();
 
   if (!isOpen) return null;
 
@@ -88,7 +90,11 @@ export const ClientReliabilityModal: React.FC<ClientReliabilityModalProps> = ({
             <div>
               <h2 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
                 Client Reliability & Payment Speed Intelligence
-                <span className="text-[10px] font-semibold text-purple-300 bg-purple-950/80 border border-purple-800/60 px-2 py-0.5 rounded-full">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                  isLight
+                    ? 'text-purple-900 bg-purple-100 border-purple-300'
+                    : 'text-purple-300 bg-purple-950/80 border-purple-800/60'
+                }`}>
                   Automated Scoring
                 </span>
               </h2>
@@ -223,20 +229,28 @@ export const ClientReliabilityModal: React.FC<ClientReliabilityModalProps> = ({
               </div>
 
               {/* Smart Recommendations Box */}
-              <div className="p-4 rounded-2xl bg-purple-950/30 border border-purple-800/60 space-y-3">
-                <div className="flex items-center gap-2 text-purple-300 font-bold text-xs">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
+              <div className={`p-4 rounded-2xl border space-y-3 ${
+                isLight
+                  ? 'bg-purple-50/90 border-purple-200'
+                  : 'bg-purple-950/30 border-purple-800/60'
+              }`}>
+                <div className={`flex items-center gap-2 font-bold text-xs ${
+                  isLight ? 'text-purple-900' : 'text-purple-300'
+                }`}>
+                  <Sparkles className={`w-4 h-4 ${isLight ? 'text-purple-700' : 'text-purple-400'}`} />
                   <span>AI Contract & Terms Advisory</span>
                 </div>
                 <div>
-                  <h5 className="text-xs font-semibold text-slate-200">Recommended Payment Terms</h5>
-                  <p className="text-xs text-purple-200/90 mt-0.5 leading-relaxed">
+                  <h5 className={`text-xs font-semibold ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>Recommended Payment Terms</h5>
+                  <p className={`text-xs mt-0.5 leading-relaxed ${
+                    isLight ? 'text-purple-950 font-medium' : 'text-purple-200/90'
+                  }`}>
                     {activeClient.recommendedTerms}
                   </p>
                 </div>
-                <div className="pt-1 border-t border-purple-800/40">
-                  <h5 className="text-xs font-semibold text-slate-200">Suggested Follow-Up Action</h5>
-                  <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                <div className={`pt-1 border-t ${isLight ? 'border-purple-200' : 'border-purple-800/40'}`}>
+                  <h5 className={`text-xs font-semibold ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>Suggested Follow-Up Action</h5>
+                  <p className={`text-xs mt-0.5 leading-relaxed ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
                     {activeClient.recommendedAction}
                   </p>
                 </div>

@@ -414,6 +414,64 @@ Return ONLY valid JSON matching this schema:
   }
 });
 
+// Endpoint to diagnose automated email deliverability, validate email syntax, and flag errors
+app.post('/api/chaser/diagnose-emails', (req, res) => {
+  const { invoices } = req.body || {};
+  const list = Array.isArray(invoices) ? invoices : [];
+  const issues: any[] = [];
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+  let validCount = 0;
+  let invalidCount = 0;
+
+  list.forEach((inv: any) => {
+    const email = (inv?.clientEmail || '').trim();
+    if (!email) {
+      invalidCount++;
+      issues.push({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        clientName: inv.clientName,
+        type: 'error',
+        message: 'Recipient email address is completely missing'
+      });
+    } else if (!emailRegex.test(email)) {
+      invalidCount++;
+      issues.push({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        clientName: inv.clientName,
+        type: 'error',
+        message: `Recipient email format "${email}" is invalid`
+      });
+    } else {
+      validCount++;
+    }
+
+    if (!inv?.paymentLink) {
+      issues.push({
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        clientName: inv.clientName,
+        type: 'warning',
+        message: 'Missing direct checkout/payment link'
+      });
+    }
+  });
+
+  const total = list.length || 1;
+  const healthScore = Math.max(0, Math.round(((total - invalidCount) / total) * 100));
+
+  res.json({
+    status: 'ok',
+    healthScore,
+    validCount,
+    invalidCount,
+    issuesCount: issues.length,
+    issues
+  });
+});
+
 // Vite middleware setup
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

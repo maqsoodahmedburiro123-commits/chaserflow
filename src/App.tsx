@@ -32,7 +32,9 @@ import {
   loadSettingsFromFirestore,
   saveSettingsToFirestore
 } from './lib/firebase';
-import { CheckCircle2, Info } from 'lucide-react';
+import { executeAutomatedEmailCheck, diagnoseInvoiceEmails } from './lib/smartDispatcher';
+import { CheckCircle2, Info, AlertCircle } from 'lucide-react';
+import { useTheme } from './context/ThemeContext';
 
 const STORAGE_KEY_INVOICES = 'chaserflow_invoices_v1';
 const STORAGE_KEY_SETTINGS = 'chaserflow_settings_v1';
@@ -86,14 +88,23 @@ export default function App() {
   const [isSmartDispatcherOpen, setIsSmartDispatcherOpen] = useState(false);
 
   // Toast notification state
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'info' = 'success') => {
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ message, type });
     setTimeout(() => {
       setToast(null);
-    }, 4000);
+    }, 4500);
   };
+
+  // Automated Email Diagnostics Monitor
+  const emailDiagnosticIssues = React.useMemo(() => {
+    return diagnoseInvoiceEmails(invoices, settings);
+  }, [invoices, settings]);
+
+  const emailErrorsCount = React.useMemo(() => {
+    return emailDiagnosticIssues.filter(i => i.type === 'error').length;
+  }, [emailDiagnosticIssues]);
 
   // Listen to Firebase Auth state
   useEffect(() => {
@@ -328,56 +339,24 @@ export default function App() {
   const handleSimulateCronRun = () => {
     setIsSimulatingCron(true);
     setTimeout(() => {
-      // Find overdue or due soon invoices that are not paused and not paid
-      const candidates = invoices.filter(i => i.status !== 'paid' && !i.remindersPaused);
+      const result = executeAutomatedEmailCheck(invoices, settings);
 
-      if (candidates.length === 0) {
-        setIsSimulatingCron(false);
-        showToast('Cron check complete: No active invoices require follow-up today.', 'info');
-        return;
-      }
+      setInvoices(result.updatedInvoices);
 
-      // Trigger automatic reminder for the most urgent invoice
-      const targetInvoice = candidates.sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
-      const stage = targetInvoice.status === 'overdue' ? 'overdue_3d' : 'upcoming_3d';
-      const template = generateEmailTemplate(targetInvoice, settings, stage, settings.defaultTone);
-
-      const cronLog: ReminderLog = {
-        id: `cron-${Date.now()}`,
-        timestamp: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        stage,
-        stageLabel: `Automated Daily Cron (${stage === 'overdue_3d' ? 'Overdue' : 'Upcoming'})`,
-        subject: template.subject,
-        recipientEmail: targetInvoice.clientEmail,
-        bodyPreview: template.body.slice(0, 100) + '...',
-        status: 'delivered'
-      };
-
-      let updatedTarget: Invoice | null = null;
-      setInvoices(prev => prev.map(inv => {
-        if (inv.id === targetInvoice.id) {
-          const next = {
-            ...inv,
-            remindersSentCount: (inv.remindersSentCount || 0) + 1,
-            lastReminderDate: new Date().toISOString().split('T')[0],
-            reminderHistory: [cronLog, ...(inv.reminderHistory || [])]
-          };
-          updatedTarget = next;
-          return next;
-        }
-        return inv;
-      }));
-
-      if (currentUser && updatedTarget) {
-        saveInvoiceToFirestore(currentUser.uid, updatedTarget);
+      if (currentUser && result.updatedInvoices.length > 0) {
+        batchSaveInvoicesToFirestore(currentUser.uid, result.updatedInvoices);
       }
 
       setIsSimulatingCron(false);
-      showToast(
-        `Automated daily scan triggered reminder for ${targetInvoice.invoiceNumber} (${targetInvoice.clientName})!`,
-        'success'
-      );
-    }, 1200);
+
+      if (result.errorCount > 0) {
+        showToast(result.summaryMessage, 'error');
+      } else if (result.dispatchedCount > 0) {
+        showToast(result.summaryMessage, 'success');
+      } else {
+        showToast(result.summaryMessage, 'info');
+      }
+    }, 1000);
   };
 
   const handleResetDemoData = () => {
@@ -404,15 +383,28 @@ export default function App() {
 
   // Next sequential invoice number calculation
   const nextInvoiceNumber = `INV-2026-0${90 + invoices.length + 1}`;
+  const { isLight } = useTheme();
 
   return (
-    <div className="min-h-screen bg-[#0b0f17] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div className={`min-h-screen flex flex-col font-sans transition-colors duration-150 ${
+      isLight 
+        ? 'bg-slate-50 text-slate-900 selection:bg-emerald-200 selection:text-emerald-900' 
+        : 'bg-[#0b0f17] text-slate-100 selection:bg-emerald-500/30 selection:text-emerald-200'
+    }`}>
       
       {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-50 animate-slideUp">
-          <div className="bg-slate-900 border border-emerald-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md">
-            {toast.type === 'success' ? (
+          <div className={`px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md border ${
+            toast.type === 'error'
+              ? 'bg-slate-900 border-rose-500 text-white shadow-rose-950/40'
+              : toast.type === 'success'
+              ? 'bg-slate-900 border-emerald-500/50 text-white'
+              : 'bg-slate-900 border-cyan-500/50 text-white'
+          }`}>
+            {toast.type === 'error' ? (
+              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+            ) : toast.type === 'success' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             ) : (
               <Info className="w-5 h-5 text-cyan-400 shrink-0" />
@@ -434,6 +426,7 @@ export default function App() {
         }}
         onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
         onOpenSmartDispatcher={() => setIsSmartDispatcherOpen(true)}
+        emailErrorsCount={emailErrorsCount}
         onSimulateCronRun={handleSimulateCronRun}
         isSimulating={isSimulatingCron}
         activeInvoicesCount={invoices.filter(i => i.status !== 'paid').length}
@@ -612,9 +605,10 @@ export default function App() {
         invoices={invoices}
         settings={settings}
         onUpdateSettings={(newSettings) => {
-          setSettings(newSettings);
+          const updated = { ...settings, ...newSettings };
+          setSettings(updated);
           if (currentUser) {
-            saveSettingsToFirestore(currentUser.uid, newSettings);
+            saveSettingsToFirestore(currentUser.uid, updated);
           }
           showToast('Smart working hours & guard rules updated!', 'success');
         }}
@@ -622,6 +616,19 @@ export default function App() {
           setCustomDraftScript(undefined);
           setPreviewInvoice(invoice);
           setIsSmartDispatcherOpen(false);
+        }}
+        onAutomatedCheckComplete={(result) => {
+          setInvoices(result.updatedInvoices);
+          if (currentUser && result.updatedInvoices.length > 0) {
+            batchSaveInvoicesToFirestore(currentUser.uid, result.updatedInvoices);
+          }
+          if (result.errorCount > 0) {
+            showToast(result.summaryMessage, 'error');
+          } else if (result.dispatchedCount > 0) {
+            showToast(result.summaryMessage, 'success');
+          } else {
+            showToast(result.summaryMessage, 'info');
+          }
         }}
       />
 

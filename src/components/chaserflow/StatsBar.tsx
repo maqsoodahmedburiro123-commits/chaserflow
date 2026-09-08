@@ -1,6 +1,8 @@
 import React from 'react';
 import { Invoice } from '../../types/chaserflow';
 import { calculateAllClientScores } from '../../lib/clientScoring';
+import { CashflowTrendChart } from './CashflowTrendChart';
+import { useTheme } from '../../context/ThemeContext';
 import { 
   DollarSign, 
   AlertCircle, 
@@ -48,26 +50,42 @@ export const StatsBar: React.FC<StatsBarProps> = ({
     ? Math.round(clientScores.reduce((acc, c) => acc + c.score, 0) / clientScores.length)
     : 85;
 
+  const { isLight } = useTheme();
+
   return (
     <div className="space-y-3 mb-6">
       
       {/* Top AI Cash Intelligence Banner */}
-      <div className="bg-gradient-to-r from-purple-950/50 via-indigo-950/30 to-slate-900 border border-purple-500/30 rounded-2xl p-3 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+      <div className={`border rounded-2xl p-3 sm:px-4 sm:py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm transition-all ${
+        isLight
+          ? 'bg-purple-50/90 border-purple-200/90'
+          : 'bg-gradient-to-r from-purple-950/50 via-indigo-950/30 to-slate-900 border-purple-500/30'
+      }`}>
         <div 
           onClick={onOpenRiskRadar}
           className="flex items-center gap-2.5 cursor-pointer flex-1"
         >
-          <div className="w-7 h-7 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
+          <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${
+            isLight
+              ? 'bg-purple-100 border-purple-300 text-purple-800'
+              : 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+          }`}>
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white">AI Cashflow Risk Radar</span>
-              <span className="text-[10px] text-purple-300 font-medium bg-purple-950/80 px-2 py-0.2 rounded-full border border-purple-800">
+              <span className={`text-xs font-bold ${isLight ? 'text-purple-950 font-extrabold' : 'text-white'}`}>
+                AI Cashflow Risk Radar
+              </span>
+              <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full border ${
+                isLight
+                  ? 'text-purple-900 bg-purple-100 border-purple-300'
+                  : 'text-purple-300 bg-purple-950/80 border-purple-800'
+              }`}>
                 Live Analysis
               </span>
             </div>
-            <p className="text-[11px] text-slate-300">
+            <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
               {overdueInvoices.length > 0 
                 ? `${overdueInvoices.length} account${overdueInvoices.length === 1 ? '' : 's'} require escalation. Total $${overdueAmount.toLocaleString()} overdue.`
                 : 'All accounts on track. Low portfolio default risk detected.'}
@@ -80,10 +98,14 @@ export const StatsBar: React.FC<StatsBarProps> = ({
           {onOpenClientReliability && (
             <button
               onClick={onOpenClientReliability}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-purple-300 border border-purple-800/50 text-[11px] font-semibold transition-all cursor-pointer"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                isLight
+                  ? 'bg-white hover:bg-purple-100 text-purple-900 border-purple-300 shadow-xs'
+                  : 'bg-slate-800/80 hover:bg-slate-700 text-purple-300 border-purple-800/50'
+              }`}
               title="Client Reliability Scoring & Tiering"
             >
-              <ShieldCheck className="w-3 h-3 text-purple-400" />
+              <ShieldCheck className={`w-3 h-3 ${isLight ? 'text-purple-700' : 'text-purple-400'}`} />
               <span>Reliability Avg: {avgClientScore}/100</span>
             </button>
           )}
@@ -91,10 +113,14 @@ export const StatsBar: React.FC<StatsBarProps> = ({
           {onOpenSmartDispatcher && (
             <button
               onClick={onOpenSmartDispatcher}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-cyan-300 border border-cyan-800/50 text-[11px] font-semibold transition-all cursor-pointer"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                isLight
+                  ? 'bg-white hover:bg-cyan-50 text-cyan-900 border-cyan-300 shadow-xs'
+                  : 'bg-slate-800/80 hover:bg-slate-700 text-cyan-300 border-cyan-800/50'
+              }`}
               title="Smart Working Hours & Queue Timing"
             >
-              <Clock className="w-3 h-3 text-cyan-400" />
+              <Clock className={`w-3 h-3 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
               <span>Working Hours Active</span>
             </button>
           )}
@@ -102,17 +128,25 @@ export const StatsBar: React.FC<StatsBarProps> = ({
           {onOpenCadenceBuilder && (
             <button
               onClick={onOpenCadenceBuilder}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-emerald-300 border border-emerald-800/50 text-[11px] font-semibold transition-all cursor-pointer"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[11px] font-semibold transition-all cursor-pointer ${
+                isLight
+                  ? 'bg-white hover:bg-emerald-50 text-emerald-900 border-emerald-300 shadow-xs'
+                  : 'bg-slate-800/80 hover:bg-slate-700 text-emerald-300 border-emerald-800/50'
+              }`}
               title="Customize Chaser Escalation Sequence"
             >
-              <GitMerge className="w-3 h-3 text-emerald-400" />
+              <GitMerge className={`w-3 h-3 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`} />
               <span>Cadence Stages</span>
             </button>
           )}
 
           <div 
             onClick={onOpenRiskRadar}
-            className="flex items-center gap-1 text-xs font-bold text-purple-300 hover:text-purple-200 cursor-pointer pl-1"
+            className={`flex items-center gap-1 text-xs font-bold cursor-pointer pl-1 ${
+              isLight
+                ? 'text-purple-900 hover:text-purple-700'
+                : 'text-purple-300 hover:text-purple-200'
+            }`}
           >
             <span>Risk Horizon</span>
             <ArrowRight className="w-3.5 h-3.5" />
@@ -198,6 +232,9 @@ export const StatsBar: React.FC<StatsBarProps> = ({
           </p>
         </div>
       </div>
+
+      {/* 6-Month Cashflow & Receivable Volume Trend Chart (Recharts) */}
+      <CashflowTrendChart invoices={invoices} />
 
     </div>
   );

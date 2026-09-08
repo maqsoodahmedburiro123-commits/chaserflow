@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Invoice, ChaserSettings, ReminderStage, EmailTone, ReminderLog } from '../../types/chaserflow';
 import { generateEmailTemplate, DEFAULT_CHASER_SETTINGS } from '../../data/defaultInvoices';
 import { generateInvoicePdf } from '../../lib/pdfGenerator';
+import { validateClientEmail } from '../../lib/smartDispatcher';
+import { useTheme } from '../../context/ThemeContext';
 import { 
   X, 
   Send, 
@@ -9,6 +11,7 @@ import {
   Sparkles, 
   Clock, 
   CheckCircle2, 
+  AlertCircle,
   History,
   Copy,
   Check,
@@ -17,7 +20,9 @@ import {
   Lightbulb,
   ChevronDown,
   ChevronUp,
-  FileDown
+  FileDown,
+  ExternalLink,
+  Edit3
 } from 'lucide-react';
 
 interface ReminderPreviewModalProps {
@@ -37,6 +42,7 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
   onSendReminder,
   initialCustomScript
 }) => {
+  const { isLight } = useTheme();
   // Determine smart default stage based on invoice status safely
   const defaultStage: ReminderStage = 
     invoice?.status === 'overdue' ? 'overdue_3d' :
@@ -47,6 +53,9 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
   const [tone, setTone] = useState<EmailTone>(settings?.defaultTone || 'professional');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState(initialCustomScript || '');
+  const [recipientEmail, setRecipientEmail] = useState(invoice?.clientEmail || '');
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedSms, setCopiedSms] = useState(false);
@@ -59,6 +68,14 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiTip, setAiTip] = useState<string | null>(null);
   const [smsSnippet, setSmsSnippet] = useState<string | null>(null);
+
+  // Sync recipientEmail when invoice changes
+  useEffect(() => {
+    if (invoice) {
+      setRecipientEmail(invoice.clientEmail || '');
+      setSendError(null);
+    }
+  }, [invoice]);
 
   // Regenerate subject and body when stage or tone changes (unless initial custom script provided)
   useEffect(() => {
@@ -121,6 +138,15 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
 
   const handleSend = () => {
     if (!invoice) return;
+
+    // Validate email
+    const emailValidation = validateClientEmail(recipientEmail);
+    if (!emailValidation.isValid) {
+      setSendError(emailValidation.reason || 'Invalid recipient email address');
+      return;
+    }
+
+    setSendError(null);
     setIsSending(true);
     setTimeout(() => {
       const newLog: ReminderLog = {
@@ -133,9 +159,10 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
           stage === 'overdue_3d' ? '3 Days Overdue Nudge' :
           stage === 'overdue_7d' ? '7 Days Overdue Notice' : 'Manual Follow-up',
         subject,
-        recipientEmail: invoice.clientEmail,
+        recipientEmail: recipientEmail.trim(),
         bodyPreview: body.slice(0, 100) + '...',
-        status: 'delivered'
+        status: 'delivered',
+        deliveryChannel: 'instant_dispatch'
       };
 
       onSendReminder(invoice.id, newLog);
@@ -175,9 +202,34 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
                 <h3 className="text-base font-bold text-white">Chaser Reminder Dispatcher</h3>
                 <span className="text-xs text-slate-400 font-mono">({invoice.invoiceNumber})</span>
               </div>
-              <p className="text-xs text-slate-400">
-                To: <span className="text-slate-200 font-medium">{invoice.clientName}</span> &lt;{invoice.clientEmail}&gt;
-              </p>
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-0.5">
+                <span>To:</span>
+                <span className="text-slate-200 font-medium">{invoice.clientName}</span>
+                {isEditingEmail ? (
+                  <input
+                    type="email"
+                    value={recipientEmail}
+                    onChange={(e) => {
+                      setRecipientEmail(e.target.value);
+                      if (sendError) setSendError(null);
+                    }}
+                    onBlur={() => setIsEditingEmail(false)}
+                    autoFocus
+                    className="bg-slate-950 border border-emerald-500 rounded px-1.5 py-0.5 text-xs text-white font-mono focus:outline-none"
+                    placeholder="client@company.com"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingEmail(true)}
+                    className="inline-flex items-center gap-1 text-slate-300 font-mono hover:text-emerald-400 cursor-pointer"
+                    title="Click to edit recipient email"
+                  >
+                    <span>&lt;{recipientEmail || 'no email set'}&gt;</span>
+                    <Edit3 className="w-3 h-3 text-slate-500 hover:text-emerald-400" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <button 
@@ -218,21 +270,31 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
           <div className="p-5 space-y-4 overflow-y-auto flex-1">
             
             {/* AI Generator Toggle Header */}
-            <div className="bg-gradient-to-r from-purple-950/40 via-indigo-950/20 to-slate-800/40 border border-purple-500/30 rounded-xl p-3">
+            <div className={`border rounded-xl p-3 transition-all ${
+              isLight
+                ? 'bg-purple-50/90 border-purple-200 shadow-xs'
+                : 'bg-gradient-to-r from-purple-950/40 via-indigo-950/20 to-slate-800/40 border-purple-500/30'
+            }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-300">
+                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                    isLight ? 'bg-purple-100 text-purple-800' : 'bg-purple-500/20 text-purple-300'
+                  }`}>
                     <Sparkles className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-purple-200">AI Context & Strategy Drafter</span>
+                    <span className={`text-xs font-bold ${isLight ? 'text-purple-950' : 'text-purple-200'}`}>
+                      AI Context & Strategy Drafter
+                    </span>
                   </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setShowAiDrafter(!showAiDrafter)}
-                  className="text-xs text-purple-300 hover:text-purple-200 font-semibold flex items-center gap-1 cursor-pointer"
+                  className={`text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                    isLight ? 'text-purple-800 hover:text-purple-950' : 'text-purple-300 hover:text-purple-200'
+                  }`}
                 >
                   <span>{showAiDrafter ? 'Hide Drafter' : 'Open AI Drafter'}</span>
                   {showAiDrafter ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
@@ -240,9 +302,13 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
               </div>
 
               {showAiDrafter && (
-                <div className="mt-3 pt-3 border-t border-purple-500/20 space-y-3 animate-fadeIn">
+                <div className={`mt-3 pt-3 border-t space-y-3 animate-fadeIn ${
+                  isLight ? 'border-purple-200' : 'border-purple-500/20'
+                }`}>
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-purple-300 mb-1">
+                    <label className={`block text-[10px] font-bold uppercase tracking-wider mb-1 ${
+                      isLight ? 'text-purple-900' : 'text-purple-300'
+                    }`}>
                       Choose AI Negotiation Strategy:
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
@@ -251,8 +317,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
                         onClick={() => setAiStrategy('polite_collaborative')}
                         className={`text-[11px] px-2.5 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           aiStrategy === 'polite_collaborative'
-                            ? 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
-                            : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
+                            ? isLight 
+                              ? 'bg-purple-100 border-purple-400 text-purple-950 font-bold shadow-xs' 
+                              : 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
+                            : isLight
+                              ? 'bg-white border-slate-200 text-slate-700 hover:border-purple-300'
+                              : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
                         }`}
                       >
                         🤝 Relationship Preserver
@@ -263,8 +333,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
                         onClick={() => setAiStrategy('firm_contractual')}
                         className={`text-[11px] px-2.5 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           aiStrategy === 'firm_contractual'
-                            ? 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
-                            : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
+                            ? isLight 
+                              ? 'bg-purple-100 border-purple-400 text-purple-950 font-bold shadow-xs' 
+                              : 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
+                            : isLight
+                              ? 'bg-white border-slate-200 text-slate-700 hover:border-purple-300'
+                              : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
                         }`}
                       >
                         ⚖️ Contractual Boundary
@@ -275,8 +349,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
                         onClick={() => setAiStrategy('split_payment_offer')}
                         className={`text-[11px] px-2.5 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           aiStrategy === 'split_payment_offer'
-                            ? 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
-                            : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
+                            ? isLight 
+                              ? 'bg-purple-100 border-purple-400 text-purple-950 font-bold shadow-xs' 
+                              : 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
+                            : isLight
+                              ? 'bg-white border-slate-200 text-slate-700 hover:border-purple-300'
+                              : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
                         }`}
                       >
                         🌗 50/50 Split Offer
@@ -287,8 +365,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
                         onClick={() => setAiStrategy('urgency_discount')}
                         className={`text-[11px] px-2.5 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           aiStrategy === 'urgency_discount'
-                            ? 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
-                            : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
+                            ? isLight 
+                              ? 'bg-purple-100 border-purple-400 text-purple-950 font-bold shadow-xs' 
+                              : 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
+                            : isLight
+                              ? 'bg-white border-slate-200 text-slate-700 hover:border-purple-300'
+                              : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
                         }`}
                       >
                         ⚡ 3% Quick-Pay Credit
@@ -299,8 +381,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
                         onClick={() => setAiStrategy('short_sms')}
                         className={`text-[11px] px-2.5 py-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
                           aiStrategy === 'short_sms'
-                            ? 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
-                            : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
+                            ? isLight 
+                              ? 'bg-purple-100 border-purple-400 text-purple-950 font-bold shadow-xs' 
+                              : 'bg-purple-600/30 border-purple-400 text-purple-200 font-bold'
+                            : isLight
+                              ? 'bg-white border-slate-200 text-slate-700 hover:border-purple-300'
+                              : 'bg-slate-900/60 border-slate-700 text-slate-300 hover:border-slate-600'
                         }`}
                       >
                         📱 WhatsApp / SMS Style
@@ -361,8 +447,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
 
             {/* AI Tactical Advice Box if available */}
             {aiTip && (
-              <div className="p-3 rounded-xl bg-purple-950/30 border border-purple-500/20 text-xs text-purple-200 flex items-start gap-2">
-                <Lightbulb className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+              <div className={`p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                isLight
+                  ? 'bg-purple-50 border-purple-200 text-purple-900'
+                  : 'bg-purple-950/30 border-purple-500/20 text-purple-200'
+              }`}>
+                <Lightbulb className={`w-4 h-4 shrink-0 mt-0.5 ${isLight ? 'text-purple-700' : 'text-purple-400'}`} />
                 <span>{aiTip}</span>
               </div>
             )}
@@ -482,6 +572,23 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
               </div>
             )}
 
+            {/* Send Error Notice */}
+            {sendError && (
+              <div className="p-3 bg-rose-950/50 border border-rose-800 rounded-xl flex items-center justify-between text-xs text-rose-300">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span><strong>Cannot Dispatch:</strong> {sendError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingEmail(true)}
+                  className="px-2.5 py-1 bg-rose-900 hover:bg-rose-800 text-rose-100 rounded-lg text-[11px] font-bold shrink-0 cursor-pointer"
+                >
+                  Edit Recipient Email
+                </button>
+              </div>
+            )}
+
             {/* Micro details badge */}
             <div className="p-2.5 rounded-xl bg-slate-800/50 border border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
               <span>Direct Checkout Link:</span>
@@ -496,16 +603,37 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
             {invoice.reminderHistory && invoice.reminderHistory.length > 0 ? (
               <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
                 {invoice.reminderHistory.map((log) => (
-                  <div key={log.id} className="p-3 bg-slate-800/60 border border-slate-700/70 rounded-xl">
+                  <div 
+                    key={log.id} 
+                    className={`p-3 rounded-xl border ${
+                      log.status === 'failed' 
+                        ? 'bg-rose-950/30 border-rose-800/60' 
+                        : 'bg-slate-800/60 border-slate-700/70'
+                    }`}
+                  >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                        {log.stageLabel}
+                        {log.status === 'failed' ? (
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        )}
+                        <span>{log.stageLabel}</span>
+                        {log.status === 'failed' && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 border border-rose-800 font-bold">
+                            Delivery Blocked
+                          </span>
+                        )}
                       </span>
                       <span className="text-[10px] text-slate-400 font-mono">{log.timestamp}</span>
                     </div>
                     <div className="text-xs text-slate-300 font-medium mb-1">{log.subject}</div>
                     <div className="text-[11px] text-slate-400 line-clamp-2">{log.bodyPreview}</div>
+                    {log.errorMessage && (
+                      <div className="text-[11px] text-rose-300 bg-rose-950/50 p-2 rounded-lg mt-2 border border-rose-900 font-mono">
+                        Error Reason: {log.errorMessage}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -519,12 +647,12 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
         )}
 
         {/* Footer Actions */}
-        <div className="px-5 py-4 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
+        <div className="px-5 py-4 border-t border-slate-800 bg-slate-900/90 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+              className="px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
             >
               Cancel
             </button>
@@ -535,8 +663,30 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
               title="Download Invoice PDF"
             >
               <FileDown className="w-3.5 h-3.5 text-blue-400" />
-              <span>Download PDF</span>
+              <span>PDF</span>
             </button>
+            {activeTab === 'compose' && (
+              <>
+                <a
+                  href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                  title="Open draft in Gmail in new tab"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-red-400" />
+                  <span>Gmail</span>
+                </a>
+                <a
+                  href={`mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+                  title="Send via default mail app"
+                >
+                  <Mail className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Mail App</span>
+                </a>
+              </>
+            )}
           </div>
 
           {activeTab === 'compose' && (
@@ -544,10 +694,10 @@ export const ReminderPreviewModal: React.FC<ReminderPreviewModalProps> = ({
               type="button"
               onClick={handleSend}
               disabled={isSending}
-              className="inline-flex items-center gap-2 px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-950/50 cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-950/50 cursor-pointer disabled:opacity-50"
             >
               <Send className="w-3.5 h-3.5 text-slate-950" />
-              <span>{isSending ? 'Dispatching...' : 'Dispatch Reminder Now'}</span>
+              <span>{isSending ? 'Dispatching...' : 'Dispatch & Record Log'}</span>
             </button>
           )}
         </div>

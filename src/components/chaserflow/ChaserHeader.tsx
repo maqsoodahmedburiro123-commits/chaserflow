@@ -9,8 +9,12 @@ import {
   Send,
   FileSpreadsheet,
   ShieldCheck,
-  GitMerge
+  GitMerge,
+  AlertCircle,
+  Sun,
+  Moon
 } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 interface ChaserHeaderProps {
   onOpenNewInvoice: () => void;
@@ -20,6 +24,7 @@ interface ChaserHeaderProps {
   onOpenClientReliability?: () => void;
   onOpenCadenceBuilder?: () => void;
   onOpenSmartDispatcher?: () => void;
+  emailErrorsCount?: number;
   onSimulateCronRun: () => void;
   isSimulating: boolean;
   activeInvoicesCount: number;
@@ -36,6 +41,7 @@ export const ChaserHeader: React.FC<ChaserHeaderProps> = ({
   onOpenClientReliability,
   onOpenCadenceBuilder,
   onOpenSmartDispatcher,
+  emailErrorsCount,
   onSimulateCronRun,
   isSimulating,
   activeInvoicesCount,
@@ -43,6 +49,8 @@ export const ChaserHeader: React.FC<ChaserHeaderProps> = ({
   onSignIn,
   isSigningIn
 }) => {
+  const { isLight, toggleTheme } = useTheme();
+
   return (
     <header className="bg-slate-900/95 border-b border-slate-800 sticky top-0 z-30 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
@@ -89,10 +97,14 @@ export const ChaserHeader: React.FC<ChaserHeaderProps> = ({
               <button
                 id="client-reliability-btn"
                 onClick={onOpenClientReliability}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-700/80 text-purple-300 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm"
+                className={`inline-flex items-center gap-1.5 px-3 py-2 border text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm ${
+                  isLight
+                    ? 'bg-purple-50 hover:bg-purple-100 border-purple-300 text-purple-900 font-bold'
+                    : 'bg-purple-950/60 hover:bg-purple-900/60 border-purple-700/80 text-purple-300'
+                }`}
                 title="Client Reliability & Scoring Profile"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                <ShieldCheck className={`w-3.5 h-3.5 ${isLight ? 'text-purple-700' : 'text-purple-400'}`} />
                 <span className="hidden md:inline">Client Scores</span>
                 <span className="md:hidden">Scores</span>
               </button>
@@ -103,12 +115,31 @@ export const ChaserHeader: React.FC<ChaserHeaderProps> = ({
               <button
                 id="smart-dispatcher-btn"
                 onClick={onOpenSmartDispatcher}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-cyan-950/60 hover:bg-cyan-900/60 border border-cyan-700/80 text-cyan-300 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm"
-                title="Smart Dispatcher & Working Hours Guard"
+                className={`inline-flex items-center gap-1.5 px-3 py-2 border text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm relative ${
+                  emailErrorsCount && emailErrorsCount > 0
+                    ? 'bg-rose-950/70 hover:bg-rose-900/70 border-rose-600 text-rose-200 ring-1 ring-rose-500/50'
+                    : isLight
+                    ? 'bg-cyan-50 hover:bg-cyan-100 border-cyan-300 text-cyan-900 font-bold'
+                    : 'bg-cyan-950/60 hover:bg-cyan-900/60 border-cyan-700/80 text-cyan-300'
+                }`}
+                title="Smart Dispatcher & Email Health Diagnostics"
               >
-                <Clock className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="hidden md:inline">Smart Timing</span>
-                <span className="md:hidden">Timing</span>
+                {emailErrorsCount && emailErrorsCount > 0 ? (
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                ) : (
+                  <Clock className={`w-3.5 h-3.5 ${isLight ? 'text-cyan-700' : 'text-cyan-400'}`} />
+                )}
+                <span className="hidden md:inline">
+                  {emailErrorsCount && emailErrorsCount > 0 ? 'Email Errors' : 'Email Health'}
+                </span>
+                <span className="md:hidden">
+                  {emailErrorsCount && emailErrorsCount > 0 ? 'Errors' : 'Health'}
+                </span>
+                {emailErrorsCount && emailErrorsCount > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center -ml-0.5">
+                    {emailErrorsCount}
+                  </span>
+                )}
               </button>
             )}
 
@@ -116,10 +147,14 @@ export const ChaserHeader: React.FC<ChaserHeaderProps> = ({
             <button
               id="ai-risk-radar-btn"
               onClick={onOpenRiskRadar}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-purple-950/80 to-indigo-950/80 hover:from-purple-900 hover:to-indigo-900 border border-purple-700/80 text-purple-200 text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm"
+              className={`inline-flex items-center gap-1.5 px-3 py-2 border text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-sm ${
+                isLight
+                  ? 'bg-indigo-50 hover:bg-indigo-100 border-indigo-300 text-indigo-900 font-bold'
+                  : 'bg-gradient-to-r from-purple-950/80 to-indigo-950/80 hover:from-purple-900 hover:to-indigo-900 border-purple-700/80 text-purple-200'
+              }`}
               title="Open AI Cashflow Risk Radar"
             >
-              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <Sparkles className={`w-3.5 h-3.5 ${isLight ? 'text-indigo-700' : 'text-purple-400'}`} />
               <span className="hidden sm:inline">AI Cash Radar</span>
               <span className="sm:hidden">Radar</span>
             </button>
@@ -191,6 +226,24 @@ export const ChaserHeader: React.FC<ChaserHeaderProps> = ({
                 <span className="hidden sm:inline">{isSigningIn ? 'Signing In...' : 'Sign In'}</span>
               </button>
             )}
+
+            {/* Theme Toggle Button (Dark / High-Contrast Light Mode) */}
+            <button
+              id="theme-toggle-btn"
+              onClick={toggleTheme}
+              className="p-2 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+              title={isLight ? "Switch to Dark Mode" : "Switch to High-Contrast Light Theme (for well-lit offices)"}
+              aria-label={isLight ? "Switch to Dark Mode" : "Switch to High-Contrast Light Theme"}
+            >
+              {isLight ? (
+                <Moon className="w-4 h-4 text-indigo-600 fill-indigo-600/20" />
+              ) : (
+                <Sun className="w-4 h-4 text-amber-400 fill-amber-400/20" />
+              )}
+              <span className="hidden xl:inline text-[11px] font-semibold text-slate-300">
+                {isLight ? 'Dark' : 'Light'}
+              </span>
+            </button>
 
             {/* Settings Button */}
             <button

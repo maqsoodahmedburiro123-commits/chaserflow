@@ -11,8 +11,11 @@ import {
   RotateCcw,
   BellRing,
   GitMerge,
-  Clock
+  Clock,
+  Sun,
+  Moon
 } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -33,6 +36,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenCadenceBuilder,
   onOpenSmartDispatcher
 }) => {
+  const { theme, setTheme, isLight } = useTheme();
   const [formData, setFormData] = useState<ChaserSettings>({ ...settings });
   const [savedSuccess, setSavedSuccess] = useState(false);
 
@@ -198,6 +202,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 Enforce send windows (e.g. 9am-5pm), pause weekends, see upcoming queue.
               </p>
             </button>
+          </div>
+
+          {/* Theme & Display Mode */}
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between">
+              <span>Display Theme</span>
+              <span className="text-[10px] font-normal text-slate-500">Accessibility & office lighting</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                id="settings-theme-dark-btn"
+                onClick={() => setTheme('dark')}
+                className={`p-2.5 rounded-xl border flex items-center gap-2.5 text-left transition-all cursor-pointer ${
+                  !isLight 
+                    ? 'bg-slate-800 border-emerald-500/80 text-white shadow-xs' 
+                    : 'bg-slate-800/40 border-slate-700 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <div className={`p-1.5 rounded-lg ${!isLight ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700/50 text-slate-400'}`}>
+                  <Moon className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold">Dark Theme</div>
+                  <div className="text-[10px] text-slate-400">Default dark palette</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                id="settings-theme-light-btn"
+                onClick={() => setTheme('light')}
+                className={`p-2.5 rounded-xl border flex items-center gap-2.5 text-left transition-all cursor-pointer ${
+                  isLight 
+                    ? 'bg-white border-emerald-500 text-slate-900 shadow-xs' 
+                    : 'bg-slate-800/40 border-slate-700 text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <div className={`p-1.5 rounded-lg ${isLight ? 'bg-amber-100 text-amber-600' : 'bg-slate-700/50 text-slate-400'}`}>
+                  <Sun className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold">High-Contrast Light</div>
+                  <div className="text-[10px] text-slate-500">For sunny & well-lit rooms</div>
+                </div>
+              </button>
+            </div>
           </div>
 
           {/* Automated Schedule Blueprint summary */}

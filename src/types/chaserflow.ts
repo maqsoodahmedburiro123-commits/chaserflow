@@ -16,7 +16,30 @@ export interface ReminderLog {
   subject: string;
   recipientEmail: string;
   bodyPreview: string;
-  status: 'sent' | 'delivered' | 'paid_halted';
+  status: 'sent' | 'delivered' | 'paid_halted' | 'failed' | 'bounced' | 'held_weekend' | 'held_hours';
+  errorMessage?: string;
+  deliveryChannel?: 'automated_cron' | 'instant_dispatch' | 'mail_client' | 'manual_copy';
+}
+
+export interface EmailDiagnosticIssue {
+  invoiceId: string;
+  invoiceNumber: string;
+  clientName: string;
+  type: 'error' | 'warning' | 'info';
+  category: 'email_format' | 'payment_link' | 'weekend_shield' | 'working_hours' | 'duplicate_today' | 'cadence_paused';
+  message: string;
+  resolutionHint: string;
+}
+
+export interface AutomatedCheckResult {
+  dispatchedCount: number;
+  skippedCount: number;
+  heldCount: number;
+  errorCount: number;
+  updatedInvoices: Invoice[];
+  issues: EmailDiagnosticIssue[];
+  summaryMessage: string;
+  logs: ReminderLog[];
 }
 
 export interface Invoice {
