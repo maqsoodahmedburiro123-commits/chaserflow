@@ -472,6 +472,78 @@ app.post('/api/chaser/diagnose-emails', (req, res) => {
   });
 });
 
+/* =========================================================================
+   Multi-Device & Multi-User Cloud Workspace Sync Endpoints
+   ========================================================================= */
+const workspaceSyncStore = new Map<string, {
+  invoices: any[];
+  settings: any;
+  updatedAt: string;
+  version: number;
+}>();
+
+// GET /api/sync/:workspaceKey - Pull remote workspace data
+app.get('/api/sync/:workspaceKey', (req, res) => {
+  try {
+    const key = (req.params.workspaceKey || '').toLowerCase().trim();
+    if (!key) {
+      return res.status(400).json({ status: 'error', message: 'Workspace key is required' });
+    }
+    const found = workspaceSyncStore.get(key);
+    if (!found) {
+      return res.json({
+        status: 'ok',
+        found: false,
+        message: 'No cloud record found for this workspace key yet.'
+      });
+    }
+    return res.json({
+      status: 'ok',
+      found: true,
+      invoices: found.invoices,
+      settings: found.settings,
+      updatedAt: found.updatedAt,
+      version: found.version
+    });
+  } catch (err: any) {
+    return res.status(500).json({ status: 'error', message: err?.message || 'Server error' });
+  }
+});
+
+// POST /api/sync/:workspaceKey - Push workspace data to cloud
+app.post('/api/sync/:workspaceKey', (req, res) => {
+  try {
+    const key = (req.params.workspaceKey || '').toLowerCase().trim();
+    if (!key) {
+      return res.status(400).json({ status: 'error', message: 'Workspace key is required' });
+    }
+    const { invoices, settings } = req.body;
+    if (!Array.isArray(invoices)) {
+      return res.status(400).json({ status: 'error', message: 'invoices array is required' });
+    }
+
+    const existing = workspaceSyncStore.get(key);
+    const version = (existing?.version || 0) + 1;
+    const updatedAt = new Date().toISOString();
+
+    workspaceSyncStore.set(key, {
+      invoices,
+      settings: settings || {},
+      updatedAt,
+      version
+    });
+
+    return res.json({
+      status: 'ok',
+      updatedAt,
+      count: invoices.length,
+      version
+    });
+  } catch (err: any) {
+    return res.status(500).json({ status: 'error', message: err?.message || 'Server error' });
+  }
+});
+
 // Vite middleware setup
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -493,4 +565,10 @@ async function startServer() {
   });
 }
 
-startServer();
+export default app;
+
+// Only start the standalone port listener when not in Vercel serverless environment
+if (!process.env.VERCEL) {
+  startServer();
+}
+

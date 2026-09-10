@@ -13,7 +13,8 @@ import {
   GitMerge,
   Clock,
   Sun,
-  Moon
+  Moon,
+  Database
 } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -25,6 +26,7 @@ interface SettingsModalProps {
   onResetDemoData: () => void;
   onOpenCadenceBuilder?: () => void;
   onOpenSmartDispatcher?: () => void;
+  onOpenBackupSync?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -34,7 +36,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSaveSettings,
   onResetDemoData,
   onOpenCadenceBuilder,
-  onOpenSmartDispatcher
+  onOpenSmartDispatcher,
+  onOpenBackupSync
 }) => {
   const { theme, setTheme, isLight } = useTheme();
   const [formData, setFormData] = useState<ChaserSettings>({ ...settings });
@@ -250,6 +253,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Backup, Restore & Cloud Database Sync */}
+          {onOpenBackupSync && (
+            <div className={`p-3.5 border rounded-xl flex items-center justify-between gap-3 ${
+              isLight ? 'bg-indigo-50/70 border-indigo-200' : 'bg-indigo-950/40 border-indigo-800/60'
+            }`}>
+              <div>
+                <div className={`text-xs font-bold flex items-center gap-1.5 ${isLight ? 'text-indigo-900' : 'text-indigo-200'}`}>
+                  <Database className="w-3.5 h-3.5 text-indigo-400" />
+                  Backup, Restore &amp; Cloud Database Sync
+                </div>
+                <div className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                  1-click JSON ledger snapshots and multi-device cloud synchronization
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenBackupSync();
+                }}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg cursor-pointer transition-colors shrink-0 shadow-xs"
+              >
+                Open Hub
+              </button>
+            </div>
+          )}
 
           {/* Automated Schedule Blueprint summary */}
           <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl">

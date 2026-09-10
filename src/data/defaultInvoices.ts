@@ -216,22 +216,37 @@ export function generateEmailTemplate(
   const currencySymbol = invoice.currency === 'USD' ? '$' : invoice.currency;
   const formattedAmount = `${currencySymbol}${invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   
+  // Safe payment options & remittance information block (avoids risky phishing-prone payment links)
+  const details = invoice.paymentDetails || settings.paymentDetails;
+  const instructions = invoice.paymentInstructions || settings.paymentInstructions;
+  
+  const paymentSection = [
+    `Payment Options & Remittance Information:`,
+    details?.bankName ? `• Bank Wire / ACH: ${details.bankName} | Routing: ${details.routingNumber || '021000021'} | Acct: ${details.accountNumber || '•••• 4821'}` : `• Bank ACH / Wire Transfer: ${settings.businessName} (Ref: ${invoice.invoiceNumber})`,
+    details?.swiftBic ? `• International SWIFT / BIC: ${details.swiftBic}` : null,
+    details?.zelleEmailOrPhone ? `• Zelle Direct: ${details.zelleEmailOrPhone}` : null,
+    details?.wiseTagOrEmail ? `• Wise Transfer: ${details.wiseTagOrEmail}` : null,
+    details?.checkPayableTo ? `• Check Payable To: ${details.checkPayableTo}` : null,
+    `• Remittance Reference: Invoice ${invoice.invoiceNumber}`,
+    instructions ? `• Note: ${instructions}` : null
+  ].filter(Boolean).join('\n');
+
   if (stage === 'upcoming_3d') {
     if (tone === 'casual_polite') {
       return {
         subject: `Friendly heads-up: Invoice ${invoice.invoiceNumber} is due on ${invoice.dueDate}`,
-        body: `Hi ${invoice.clientName},\n\nHope you're having a wonderful week!\n\nJust sending a friendly heads-up that Invoice ${invoice.invoiceNumber} for "${invoice.serviceDescription}" (${formattedAmount}) will be due in 3 days on ${invoice.dueDate}.\n\nFor your convenience, you can pay directly online with 1-click here:\n${invoice.paymentLink}\n\nPlease let me know if you have any questions or need anything else updated!\n\nBest regards,\n${settings.userName}\n${settings.businessName}`
+        body: `Hi ${invoice.clientName},\n\nHope you're having a wonderful week!\n\nJust sending a friendly heads-up that Invoice ${invoice.invoiceNumber} for "${invoice.serviceDescription}" (${formattedAmount}) will be due in 3 days on ${invoice.dueDate}.\n\n${paymentSection}\n\nPlease let me know if you have any questions or need anything else updated!\n\nBest regards,\n${settings.userName}\n${settings.businessName}`
       };
     } else if (tone === 'assertive_firm') {
       return {
         subject: `Payment Scheduled: Invoice ${invoice.invoiceNumber} due on ${invoice.dueDate} (${formattedAmount})`,
-        body: `Dear ${invoice.clientName},\n\nThis is an advance notice that Invoice ${invoice.invoiceNumber} is scheduled for settlement on ${invoice.dueDate}.\n\nTotal Due: ${formattedAmount}\nService Rendered: ${invoice.serviceDescription}\nDirect Payment Link: ${invoice.paymentLink}\n\nPlease ensure payment is initiated before the due date to keep accounts current.\n\nSincerely,\n${settings.userName}\n${settings.businessName}`
+        body: `Dear ${invoice.clientName},\n\nThis is an advance notice that Invoice ${invoice.invoiceNumber} is scheduled for settlement on ${invoice.dueDate}.\n\nTotal Due: ${formattedAmount}\nService Rendered: ${invoice.serviceDescription}\n\n${paymentSection}\n\nPlease ensure payment is initiated before the due date to keep accounts current.\n\nSincerely,\n${settings.userName}\n${settings.businessName}`
       };
     } else {
       // professional
       return {
         subject: `Advance Notice: Invoice ${invoice.invoiceNumber} due on ${invoice.dueDate} (${formattedAmount})`,
-        body: `Hello ${invoice.clientName},\n\nI hope this message finds you well.\n\nThis is a courtesy reminder that Invoice ${invoice.invoiceNumber} for ${invoice.serviceDescription} is due on ${invoice.dueDate}.\n\nAmount Due: ${formattedAmount}\nYou may review and complete payment online via the link below:\n${invoice.paymentLink}\n\nThank you for your business and partnership.\n\nWarm regards,\n${settings.userName}\n${settings.businessName}`
+        body: `Hello ${invoice.clientName},\n\nI hope this message finds you well.\n\nThis is a courtesy reminder that Invoice ${invoice.invoiceNumber} for ${invoice.serviceDescription} is due on ${invoice.dueDate}.\n\nAmount Due: ${formattedAmount}\n\n${paymentSection}\n\nThank you for your business and partnership.\n\nWarm regards,\n${settings.userName}\n${settings.businessName}`
       };
     }
   }
@@ -240,12 +255,12 @@ export function generateEmailTemplate(
     if (tone === 'casual_polite') {
       return {
         subject: `Invoice ${invoice.invoiceNumber} is due today (${formattedAmount})`,
-        body: `Hi ${invoice.clientName},\n\nHope your day is going well!\n\nJust a quick note that Invoice ${invoice.invoiceNumber} (${formattedAmount}) for ${invoice.serviceDescription} is due today.\n\nYou can settle it quickly using card or Apple Pay here:\n${invoice.paymentLink}\n\nOnce paid, your receipt will be automatically generated. Thank you!\n\nBest,\n${settings.userName}\n${settings.businessName}`
+        body: `Hi ${invoice.clientName},\n\nHope your day is going well!\n\nJust a quick note that Invoice ${invoice.invoiceNumber} (${formattedAmount}) for ${invoice.serviceDescription} is due today.\n\n${paymentSection}\n\nOnce remitted, your receipt will be confirmed. Thank you!\n\nBest,\n${settings.userName}\n${settings.businessName}`
       };
     } else {
       return {
         subject: `Invoice ${invoice.invoiceNumber} Due Today: ${formattedAmount}`,
-        body: `Dear ${invoice.clientName},\n\nThis email is to notify you that Invoice ${invoice.invoiceNumber} is due today, ${invoice.dueDate}.\n\nInvoice Amount: ${formattedAmount}\nScope of Work: ${invoice.serviceDescription}\nSecure Payment Link: ${invoice.paymentLink}\n\nPlease remit payment at your earliest convenience today to keep your account in good standing.\n\nThank you,\n${settings.userName}\n${settings.businessName}`
+        body: `Dear ${invoice.clientName},\n\nThis email is to notify you that Invoice ${invoice.invoiceNumber} is due today, ${invoice.dueDate}.\n\nInvoice Amount: ${formattedAmount}\nScope of Work: ${invoice.serviceDescription}\n\n${paymentSection}\n\nPlease remit payment at your earliest convenience today to keep your account in good standing.\n\nThank you,\n${settings.userName}\n${settings.businessName}`
       };
     }
   }
@@ -254,12 +269,12 @@ export function generateEmailTemplate(
     if (tone === 'casual_polite') {
       return {
         subject: `Checking in: Invoice ${invoice.invoiceNumber} is a few days overdue (${formattedAmount})`,
-        body: `Hi ${invoice.clientName},\n\nI know how busy things get! Just wanted to gently check in regarding Invoice ${invoice.invoiceNumber} (${formattedAmount}), which was due on ${invoice.dueDate}.\n\nCould you please let me know when we might expect payment, or complete it directly here:\n${invoice.paymentLink}\n\nIf you've already sent it via wire, please let me know so I can mark it paid.\n\nThanks so much!\n${settings.userName}\n${settings.businessName}`
+        body: `Hi ${invoice.clientName},\n\nI know how busy things get! Just wanted to gently check in regarding Invoice ${invoice.invoiceNumber} (${formattedAmount}), which was due on ${invoice.dueDate}.\n\nCould you please confirm when payment is scheduled, using the remittance information below:\n\n${paymentSection}\n\nIf you've already sent it via wire or ACH, please let me know so I can mark it paid.\n\nThanks so much!\n${settings.userName}\n${settings.businessName}`
       };
     } else {
       return {
         subject: `OVERDUE: Payment reminder for Invoice ${invoice.invoiceNumber} (${formattedAmount})`,
-        body: `Dear ${invoice.clientName},\n\nAccording to our records, we have not yet received payment for Invoice ${invoice.invoiceNumber} in the amount of ${formattedAmount}, which was due on ${invoice.dueDate}.\n\nOutstanding Balance: ${formattedAmount}\nWork Performed: ${invoice.serviceDescription}\n\nPlease click the link below to process payment immediately:\n${invoice.paymentLink}\n\nIf there is an issue or if this invoice has already been scheduled through your accounts payable, please update me.\n\nSincerely,\n${settings.userName}\n${settings.businessName}`
+        body: `Dear ${invoice.clientName},\n\nAccording to our records, we have not yet received payment for Invoice ${invoice.invoiceNumber} in the amount of ${formattedAmount}, which was due on ${invoice.dueDate}.\n\nOutstanding Balance: ${formattedAmount}\nWork Performed: ${invoice.serviceDescription}\n\n${paymentSection}\n\nIf there is an issue or if this invoice has already been scheduled through accounts payable, please update me.\n\nSincerely,\n${settings.userName}\n${settings.businessName}`
       };
     }
   }
@@ -267,6 +282,6 @@ export function generateEmailTemplate(
   // overdue_7d / final_escalation
   return {
     subject: `URGENT: Invoice ${invoice.invoiceNumber} is now past due (${formattedAmount})`,
-    body: `Dear ${invoice.clientName},\n\nDespite previous reminders, Invoice ${invoice.invoiceNumber} for ${formattedAmount} remains unpaid and is significantly past due (original due date: ${invoice.dueDate}).\n\n${settings.enableLateFeeNotice ? `Please note that in accordance with our terms of service, an overdue fee of ${settings.lateFeePercentage}% may apply if payment is not received within 48 hours.\n\n` : ''}Please click here to resolve this invoice immediately:\n${invoice.paymentLink}\n\nIf you need to arrange an alternate payment method or split schedule, please reply immediately to discuss.\n\nRegards,\n${settings.userName}\n${settings.businessName}`
+    body: `Dear ${invoice.clientName},\n\nDespite previous reminders, Invoice ${invoice.invoiceNumber} for ${formattedAmount} remains unpaid and is significantly past due (original due date: ${invoice.dueDate}).\n\n${settings.enableLateFeeNotice ? `Please note that in accordance with our terms of service, an overdue fee of ${settings.lateFeePercentage}% may apply if payment is not received within 48 hours.\n\n` : ''}${paymentSection}\n\nIf you need to arrange an alternate payment method or split schedule, please reply immediately to discuss.\n\nRegards,\n${settings.userName}\n${settings.businessName}`
   };
 }

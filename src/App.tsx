@@ -4,8 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { User } from 'firebase/auth';
-import { Invoice, ChaserSettings, ReminderLog, CadenceStage } from './types/chaserflow';
+import { Invoice, ChaserSettings, ReminderLog, CadenceStage, RecentlyModifiedState } from './types/chaserflow';
 import { INITIAL_INVOICES, DEFAULT_CHASER_SETTINGS, generateEmailTemplate } from './data/defaultInvoices';
 import { ChaserHeader } from './components/chaserflow/ChaserHeader';
 import { StatsBar } from './components/chaserflow/StatsBar';
@@ -20,21 +19,25 @@ import { GoogleSheetsModal } from './components/chaserflow/GoogleSheetsModal';
 import { ClientReliabilityModal } from './components/chaserflow/ClientReliabilityModal';
 import { CadenceBuilderModal } from './components/chaserflow/CadenceBuilderModal';
 import { SmartDispatcherModal } from './components/chaserflow/SmartDispatcherModal';
-import { 
-  initAuth, 
-  googleSignIn, 
-  logout, 
-  getAccessToken,
-  loadInvoicesFromFirestore, 
-  saveInvoiceToFirestore, 
-  deleteInvoiceFromFirestore, 
-  batchSaveInvoicesToFirestore,
-  loadSettingsFromFirestore,
-  saveSettingsToFirestore
-} from './lib/firebase';
+import { BackupSyncModal } from './components/chaserflow/BackupSyncModal';
+import { CommandPaletteModal } from './components/chaserflow/CommandPaletteModal';
+import { PaymentInfoModal } from './components/chaserflow/PaymentInfoModal';
 import { executeAutomatedEmailCheck, diagnoseInvoiceEmails } from './lib/smartDispatcher';
-import { CheckCircle2, Info, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Info, AlertCircle, RotateCcw, X } from 'lucide-react';
 import { useTheme } from './context/ThemeContext';
+
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
+export interface ToastData {
+  id: string;
+  message: string;
+  type: 'success' | 'info' | 'error';
+  action?: ToastAction;
+  duration?: number;
+}
 
 const STORAGE_KEY_INVOICES = 'chaserflow_invoices_v1';
 const STORAGE_KEY_SETTINGS = 'chaserflow_settings_v1';
@@ -65,11 +68,9 @@ export default function App() {
     return DEFAULT_CHASER_SETTINGS;
   });
 
-  // Firebase Auth & Token State
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [cachedToken, setCachedToken] = useState<string | null>(null);
+  // State
   const [isGoogleSheetsOpen, setIsGoogleSheetsOpen] = useState(false);
-  const [isSigningInGoogle, setIsSigningInGoogle] = useState(false);
+  const [isBackupSyncOpen, setIsBackupSyncOpen] = useState(false);
 
   // Modal controls
   const [isNewInvoiceOpen, setIsNewInvoiceOpen] = useState(false);
@@ -86,15 +87,65 @@ export default function App() {
   const [selectedClientEmailForScore, setSelectedClientEmailForScore] = useState<string | undefined>(undefined);
   const [isCadenceBuilderOpen, setIsCadenceBuilderOpen] = useState(false);
   const [isSmartDispatcherOpen, setIsSmartDispatcherOpen] = useState(false);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isGlobalPaymentInfoOpen, setIsGlobalPaymentInfoOpen] = useState(false);
+
+  // Global Keyboard Shortcut: Cmd+K / Ctrl+K opens Command Palette
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
 
   // Toast notification state
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const toastTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+  const [toast, setToast] = useState<ToastData | null>(null);
+  const [recentlyModified, setRecentlyModified] = useState<RecentlyModifiedState | null>(null);
 
-  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => {
+  const showToast = (
+    message: string, 
+    type: 'success' | 'info' | 'error' = 'success',
+    action?: ToastAction,
+    duration?: number
+  ) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    const finalDuration = duration || (action ? 8000 : 4500);
+    const id = `toast-${Date.now()}`;
+    setToast({ id, message, type, action, duration: finalDuration });
+    
+    toastTimerRef.current = setTimeout(() => {
       setToast(null);
-    }, 4500);
+    }, finalDuration);
+  };
+
+  const handleUndoRecentAction = () => {
+    if (!recentlyModified || !recentlyModified.previousInvoices || recentlyModified.previousInvoices.length === 0) {
+      return;
+    }
+    const previousSnapshot = recentlyModified.previousInvoices;
+    const affectedIds = recentlyModified.invoiceIds;
+    const desc = recentlyModified.description;
+
+    setInvoices(previousSnapshot);
+    setRecentlyModified({
+      invoiceIds: affectedIds,
+      actionType: 'restored',
+      description: `Reverted: ${desc}`,
+      timestamp: Date.now(),
+      previousInvoices: []
+    });
+
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    showToast(`Undone! Reverted changes for ${affectedIds.length} ${affectedIds.length === 1 ? 'invoice' : 'invoices'}.`, 'success');
   };
 
   // Automated Email Diagnostics Monitor
@@ -105,74 +156,6 @@ export default function App() {
   const emailErrorsCount = React.useMemo(() => {
     return emailDiagnosticIssues.filter(i => i.type === 'error').length;
   }, [emailDiagnosticIssues]);
-
-  // Listen to Firebase Auth state
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      async (user, token) => {
-        setCurrentUser(user);
-        if (token) setCachedToken(token);
-
-        // Sync with Firestore on user login
-        try {
-          const cloudInvoices = await loadInvoicesFromFirestore(user.uid);
-          if (cloudInvoices.length > 0) {
-            setInvoices(cloudInvoices);
-            showToast(`Loaded ${cloudInvoices.length} invoices from Firestore.`, 'info');
-          } else {
-            // First time sign-in: seed user's current invoices to their Firestore
-            await batchSaveInvoicesToFirestore(user.uid, invoices);
-          }
-
-          const cloudSettings = await loadSettingsFromFirestore(user.uid);
-          if (cloudSettings) {
-            setSettings(cloudSettings);
-          } else {
-            await saveSettingsToFirestore(user.uid, settings);
-          }
-        } catch (err) {
-          console.warn('Firestore initial sync error:', err);
-        }
-      },
-      () => {
-        setCurrentUser(null);
-        setCachedToken(null);
-      }
-    );
-
-    return () => unsubscribe();
-  }, []);
-
-  const handleGoogleSignIn = async () => {
-    if (isSigningInGoogle) return;
-    setIsSigningInGoogle(true);
-    try {
-      const res = await googleSignIn();
-      if (!res) {
-        // User closed the popup or cancelled sign-in
-        return;
-      }
-      setCurrentUser(res.user);
-      setCachedToken(res.accessToken);
-      showToast(`Signed in as ${res.user.displayName || res.user.email}!`, 'success');
-    } catch (err: any) {
-      if (
-        err?.code !== 'auth/popup-closed-by-user' &&
-        err?.code !== 'auth/cancelled-popup-request'
-      ) {
-        showToast(err?.message || 'Google sign-in could not be completed.', 'info');
-      }
-    } finally {
-      setIsSigningInGoogle(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await logout();
-    setCurrentUser(null);
-    setCachedToken(null);
-    showToast('Signed out of Google account.', 'info');
-  };
 
   // Sync to localStorage
   useEffect(() => {
@@ -194,17 +177,17 @@ export default function App() {
   // Actions
   const handleSaveNewInvoice = (newInvoice: Invoice) => {
     setInvoices(prev => [newInvoice, ...prev]);
-    if (currentUser) {
-      saveInvoiceToFirestore(currentUser.uid, newInvoice);
-    }
     showToast(`Invoice ${newInvoice.invoiceNumber} created! ChaserFlow is now monitoring payments.`, 'success');
   };
 
   const handleToggleMarkPaid = (invoiceId: string) => {
-    let updatedInvoice: Invoice | null = null;
+    const previousSnapshot = [...invoices];
+    const target = invoices.find(i => i.id === invoiceId);
+    if (!target) return;
+    const willBePaid = target.status !== 'paid';
+
     setInvoices(prev => prev.map(inv => {
       if (inv.id === invoiceId) {
-        const willBePaid = inv.status !== 'paid';
         if (willBePaid) {
           const paidLog: ReminderLog = {
             id: `log-paid-${Date.now()}`,
@@ -216,63 +199,69 @@ export default function App() {
             bodyPreview: 'Invoice settled in full. All upcoming automated reminder sequences have been halted.',
             status: 'delivered'
           };
-          const next = {
+          return {
             ...inv,
             status: 'paid' as const,
+            paidDate: new Date().toISOString().split('T')[0],
             remindersPaused: true,
             reminderHistory: [paidLog, ...(inv.reminderHistory || [])]
           };
-          updatedInvoice = next;
-          return next;
         } else {
           // Re-evaluate pending or overdue
           const nowStr = new Date().toISOString().split('T')[0];
           const isOverdue = inv.dueDate < nowStr;
-          const next = {
+          return {
             ...inv,
             status: isOverdue ? ('overdue' as const) : ('pending' as const),
+            paidDate: undefined,
             remindersPaused: false
           };
-          updatedInvoice = next;
-          return next;
         }
       }
       return inv;
     }));
 
-    if (currentUser && updatedInvoice) {
-      saveInvoiceToFirestore(currentUser.uid, updatedInvoice);
-    }
+    setRecentlyModified({
+      invoiceIds: [invoiceId],
+      actionType: willBePaid ? 'mark_paid' : 'bulk_unpaid',
+      description: willBePaid ? `Marked ${target.invoiceNumber} as Paid` : `Reopened ${target.invoiceNumber}`,
+      timestamp: Date.now(),
+      previousInvoices: previousSnapshot
+    });
 
-    const target = invoices.find(i => i.id === invoiceId);
-    if (target) {
-      showToast(
-        target.status === 'paid' 
-          ? `Invoice ${target.invoiceNumber} reopened for payment monitoring.` 
-          : `🎉 Payment recorded for ${target.invoiceNumber}! Automated chasers stopped.`,
-        'success'
-      );
-    }
+    showToast(
+      willBePaid 
+        ? `🎉 Payment recorded for ${target.invoiceNumber}! Automated chasers stopped.`
+        : `Invoice ${target.invoiceNumber} reopened for payment monitoring.`,
+      'success',
+      {
+        label: 'Undo',
+        onClick: () => {
+          setInvoices(previousSnapshot);
+          setRecentlyModified({
+            invoiceIds: [invoiceId],
+            actionType: 'restored',
+            description: `Reverted ${target.invoiceNumber}`,
+            timestamp: Date.now(),
+            previousInvoices: []
+          });
+          showToast(`Undone! Reverted status for ${target.invoiceNumber}.`, 'info');
+        }
+      },
+      7000
+    );
   };
 
   const handleTogglePauseReminders = (invoiceId: string) => {
-    let updatedInvoice: Invoice | null = null;
     setInvoices(prev => prev.map(inv => {
       if (inv.id === invoiceId) {
-        const nextPaused = !inv.remindersPaused;
-        const next = {
+        return {
           ...inv,
-          remindersPaused: nextPaused
+          remindersPaused: !inv.remindersPaused
         };
-        updatedInvoice = next;
-        return next;
       }
       return inv;
     }));
-
-    if (currentUser && updatedInvoice) {
-      saveInvoiceToFirestore(currentUser.uid, updatedInvoice);
-    }
 
     const target = invoices.find(i => i.id === invoiceId);
     if (target) {
@@ -287,37 +276,257 @@ export default function App() {
   };
 
   const handleDeleteInvoice = (invoiceId: string) => {
+    const previousSnapshot = [...invoices];
     const target = invoices.find(i => i.id === invoiceId);
     setInvoices(prev => prev.filter(inv => inv.id !== invoiceId));
-    if (currentUser) {
-      deleteInvoiceFromFirestore(currentUser.uid, invoiceId);
-    }
+
     if (target) {
-      showToast(`Invoice ${target.invoiceNumber} removed from ChaserFlow.`, 'info');
+      setRecentlyModified({
+        invoiceIds: [invoiceId],
+        actionType: 'delete',
+        description: `Deleted invoice ${target.invoiceNumber}`,
+        timestamp: Date.now(),
+        previousInvoices: previousSnapshot
+      });
+
+      showToast(
+        `Invoice ${target.invoiceNumber} removed from ChaserFlow.`,
+        'info',
+        {
+          label: 'Undo',
+          onClick: () => {
+            setInvoices(previousSnapshot);
+            setRecentlyModified({
+              invoiceIds: [invoiceId],
+              actionType: 'restored',
+              description: `Restored invoice ${target.invoiceNumber}`,
+              timestamp: Date.now(),
+              previousInvoices: []
+            });
+            showToast(`Restored invoice ${target.invoiceNumber}!`, 'success');
+          }
+        },
+        8000
+      );
     }
   };
 
+  const handleBulkMarkPaid = (invoiceIds: string[], targetStatus: 'paid' | 'pending') => {
+    const previousSnapshot = [...invoices];
+    const nowStr = new Date().toISOString().split('T')[0];
+    setInvoices(prev => prev.map(inv => {
+      if (invoiceIds.includes(inv.id)) {
+        if (targetStatus === 'paid') {
+          return {
+            ...inv,
+            status: 'paid',
+            paidDate: nowStr,
+            remindersPaused: true
+          };
+        } else {
+          const isOverdue = inv.dueDate < nowStr;
+          return {
+            ...inv,
+            status: isOverdue ? 'overdue' : 'pending',
+            paidDate: undefined,
+            remindersPaused: false
+          };
+        }
+      }
+      return inv;
+    }));
+
+    const actionDesc = targetStatus === 'paid'
+      ? `Marked ${invoiceIds.length} invoices as Paid`
+      : `Reopened ${invoiceIds.length} invoices`;
+
+    setRecentlyModified({
+      invoiceIds,
+      actionType: targetStatus === 'paid' ? 'bulk_paid' : 'bulk_unpaid',
+      description: actionDesc,
+      timestamp: Date.now(),
+      previousInvoices: previousSnapshot
+    });
+
+    showToast(
+      targetStatus === 'paid'
+        ? `Marked ${invoiceIds.length} invoices as Paid! Automated chasers halted.`
+        : `Reopened ${invoiceIds.length} invoices for active tracking.`,
+      'success',
+      {
+        label: 'Undo',
+        onClick: () => {
+          setInvoices(previousSnapshot);
+          setRecentlyModified({
+            invoiceIds,
+            actionType: 'restored',
+            description: `Reverted status for ${invoiceIds.length} invoices`,
+            timestamp: Date.now(),
+            previousInvoices: []
+          });
+          showToast(`Undone! Reverted status changes for ${invoiceIds.length} invoices.`, 'info');
+        }
+      },
+      8500
+    );
+  };
+
+  const handleBulkPauseReminders = (invoiceIds: string[], pause: boolean) => {
+    const previousSnapshot = [...invoices];
+    setInvoices(prev => prev.map(inv => {
+      if (invoiceIds.includes(inv.id)) {
+        return {
+          ...inv,
+          remindersPaused: pause
+        };
+      }
+      return inv;
+    }));
+
+    const actionDesc = pause
+      ? `Paused chasers for ${invoiceIds.length} invoices`
+      : `Resumed chasers for ${invoiceIds.length} invoices`;
+
+    setRecentlyModified({
+      invoiceIds,
+      actionType: pause ? 'bulk_pause' : 'bulk_resume',
+      description: actionDesc,
+      timestamp: Date.now(),
+      previousInvoices: previousSnapshot
+    });
+
+    showToast(
+      pause
+        ? `Paused automated chaser sequences for ${invoiceIds.length} invoices.`
+        : `Resumed automated chaser sequences for ${invoiceIds.length} invoices.`,
+      'info',
+      {
+        label: 'Undo',
+        onClick: () => {
+          setInvoices(previousSnapshot);
+          setRecentlyModified({
+            invoiceIds,
+            actionType: 'restored',
+            description: `Reverted chasers for ${invoiceIds.length} invoices`,
+            timestamp: Date.now(),
+            previousInvoices: []
+          });
+          showToast(`Undone! Reverted chaser sequence changes.`, 'info');
+        }
+      },
+      7500
+    );
+  };
+
+  const handleBulkDelete = (invoiceIds: string[]) => {
+    const previousSnapshot = [...invoices];
+    setInvoices(prev => prev.filter(inv => !invoiceIds.includes(inv.id)));
+
+    setRecentlyModified({
+      invoiceIds,
+      actionType: 'bulk_delete',
+      description: `Deleted ${invoiceIds.length} invoices`,
+      timestamp: Date.now(),
+      previousInvoices: previousSnapshot
+    });
+
+    showToast(
+      `Permanently deleted ${invoiceIds.length} invoices and their history.`,
+      'info',
+      {
+        label: 'Undo',
+        onClick: () => {
+          setInvoices(previousSnapshot);
+          setRecentlyModified({
+            invoiceIds,
+            actionType: 'restored',
+            description: `Restored ${invoiceIds.length} deleted invoices`,
+            timestamp: Date.now(),
+            previousInvoices: []
+          });
+          showToast(`Undone! Restored ${invoiceIds.length} deleted invoices.`, 'success');
+        }
+      },
+      9000
+    );
+  };
+
   const handleSendReminder = (invoiceId: string, log: ReminderLog) => {
-    let updatedInvoice: Invoice | null = null;
     setInvoices(prev => prev.map(inv => {
       if (inv.id === invoiceId) {
-        const next = {
+        return {
           ...inv,
           remindersSentCount: (inv.remindersSentCount || 0) + 1,
           lastReminderDate: new Date().toISOString().split('T')[0],
           reminderHistory: [log, ...(inv.reminderHistory || [])]
         };
-        updatedInvoice = next;
-        return next;
       }
       return inv;
     }));
 
-    if (currentUser && updatedInvoice) {
-      saveInvoiceToFirestore(currentUser.uid, updatedInvoice);
-    }
-
     showToast(`Reminder successfully dispatched to ${log.recipientEmail}!`, 'success');
+  };
+
+  const handleSaveInvoiceNote = (invoiceId: string, notes: string) => {
+    setInvoices(prev => prev.map(inv => {
+      if (inv.id === invoiceId) {
+        return {
+          ...inv,
+          notes: notes || undefined
+        };
+      }
+      return inv;
+    }));
+    const target = invoices.find(i => i.id === invoiceId);
+    showToast(`Updated note for ${target?.invoiceNumber || 'invoice'}.`, 'success');
+  };
+
+  const handleBatchDispatchReminders = (invoicesToSend: { invoice: Invoice; stageName: string; log: ReminderLog }[]) => {
+    if (invoicesToSend.length === 0) return;
+    const previousSnapshot = [...invoices];
+    const nowStr = new Date().toISOString().split('T')[0];
+    const affectedIds = invoicesToSend.map(item => item.invoice.id);
+
+    setInvoices(prev => prev.map(inv => {
+      const match = invoicesToSend.find(item => item.invoice.id === inv.id);
+      if (match) {
+        return {
+          ...inv,
+          remindersSentCount: (inv.remindersSentCount || 0) + 1,
+          lastReminderDate: nowStr,
+          reminderHistory: [match.log, ...(inv.reminderHistory || [])]
+        };
+      }
+      return inv;
+    }));
+
+    setRecentlyModified({
+      invoiceIds: affectedIds,
+      actionType: 'bulk_resume',
+      description: `Batch dispatched ${invoicesToSend.length} polite chasers`,
+      timestamp: Date.now(),
+      previousInvoices: previousSnapshot
+    });
+
+    showToast(
+      `Dispatched ${invoicesToSend.length} polite reminder ${invoicesToSend.length === 1 ? 'email' : 'emails'}!`,
+      'success',
+      {
+        label: 'Undo',
+        onClick: () => {
+          setInvoices(previousSnapshot);
+          setRecentlyModified({
+            invoiceIds: affectedIds,
+            actionType: 'restored',
+            description: `Reverted batch dispatch for ${affectedIds.length} invoices`,
+            timestamp: Date.now(),
+            previousInvoices: []
+          });
+          showToast(`Undone! Reverted batch dispatch reminder history.`, 'info');
+        }
+      },
+      8500
+    );
   };
 
   // Import invoices from Google Sheets
@@ -328,11 +537,7 @@ export default function App() {
     const merged = [...newItems, ...invoices];
     setInvoices(merged);
 
-    if (currentUser && newItems.length > 0) {
-      batchSaveInvoicesToFirestore(currentUser.uid, newItems);
-    }
-
-    showToast(`Added ${newItems.length} invoices imported from Google Sheets!`, 'success');
+    showToast(`Added ${newItems.length} invoices imported from spreadsheet!`, 'success');
   };
 
   // Simulate automated daily cron job
@@ -342,11 +547,6 @@ export default function App() {
       const result = executeAutomatedEmailCheck(invoices, settings);
 
       setInvoices(result.updatedInvoices);
-
-      if (currentUser && result.updatedInvoices.length > 0) {
-        batchSaveInvoicesToFirestore(currentUser.uid, result.updatedInvoices);
-      }
-
       setIsSimulatingCron(false);
 
       if (result.errorCount > 0) {
@@ -364,10 +564,6 @@ export default function App() {
     setSettings(DEFAULT_CHASER_SETTINGS);
     localStorage.removeItem(STORAGE_KEY_INVOICES);
     localStorage.removeItem(STORAGE_KEY_SETTINGS);
-    if (currentUser) {
-      batchSaveInvoicesToFirestore(currentUser.uid, INITIAL_INVOICES);
-      saveSettingsToFirestore(currentUser.uid, DEFAULT_CHASER_SETTINGS);
-    }
     showToast('Reset to original demo invoices and settings.', 'info');
   };
 
@@ -392,15 +588,18 @@ export default function App() {
         : 'bg-[#0b0f17] text-slate-100 selection:bg-emerald-500/30 selection:text-emerald-200'
     }`}>
       
-      {/* Toast Notification */}
+      {/* Toast Notification with Undo Action */}
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 animate-slideUp">
-          <div className={`px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md border ${
+        <div 
+          id="app-toast-notification"
+          className="fixed bottom-5 right-5 z-50 animate-slideUp"
+        >
+          <div className={`px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 backdrop-blur-md border transition-all ${
             toast.type === 'error'
               ? 'bg-slate-900 border-rose-500 text-white shadow-rose-950/40'
               : toast.type === 'success'
-              ? 'bg-slate-900 border-emerald-500/50 text-white'
-              : 'bg-slate-900 border-cyan-500/50 text-white'
+              ? isLight ? 'bg-slate-900 border-emerald-500/60 text-white shadow-slate-900/30' : 'bg-slate-900 border-emerald-500/50 text-white'
+              : isLight ? 'bg-slate-900 border-cyan-500/60 text-white shadow-slate-900/30' : 'bg-slate-900 border-cyan-500/50 text-white'
           }`}>
             {toast.type === 'error' ? (
               <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
@@ -409,7 +608,39 @@ export default function App() {
             ) : (
               <Info className="w-5 h-5 text-cyan-400 shrink-0" />
             )}
-            <span className="text-xs font-medium text-slate-200 max-w-sm">{toast.message}</span>
+            
+            <span className="text-xs font-medium text-slate-200 max-w-xs sm:max-w-sm">
+              {toast.message}
+            </span>
+
+            {/* Undo Action Button */}
+            {toast.action && (
+              <button
+                type="button"
+                id="toast-undo-action-btn"
+                onClick={() => {
+                  toast.action?.onClick();
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 flex items-center gap-1.5 transition-all shadow-md shadow-amber-950/30 cursor-pointer hover:scale-105 active:scale-95 shrink-0 ml-1"
+                title="Undo recent action"
+              >
+                <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{toast.action.label}</span>
+              </button>
+            )}
+
+            {/* Dismiss Toast Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                setToast(null);
+              }}
+              className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer ml-1"
+              title="Dismiss notification"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       )}
@@ -420,19 +651,18 @@ export default function App() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenRiskRadar={() => setIsRiskRadarOpen(true)}
         onOpenGoogleSheets={() => setIsGoogleSheetsOpen(true)}
+        onOpenBackupSync={() => setIsBackupSyncOpen(true)}
         onOpenClientReliability={() => {
           setSelectedClientEmailForScore(undefined);
           setIsClientReliabilityOpen(true);
         }}
         onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
         onOpenSmartDispatcher={() => setIsSmartDispatcherOpen(true)}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         emailErrorsCount={emailErrorsCount}
         onSimulateCronRun={handleSimulateCronRun}
         isSimulating={isSimulatingCron}
         activeInvoicesCount={invoices.filter(i => i.status !== 'paid').length}
-        currentUser={currentUser}
-        onSignIn={handleGoogleSignIn}
-        isSigningIn={isSigningInGoogle}
       />
 
       {/* Main Workspace */}
@@ -453,6 +683,10 @@ export default function App() {
         {/* Invoice Management Grid */}
         <InvoiceList
           invoices={invoices}
+          settings={settings}
+          recentlyModifiedState={recentlyModified}
+          onUndoRecentlyModified={handleUndoRecentAction}
+          onClearRecentlyModified={() => setRecentlyModified(null)}
           onOpenPreview={(inv) => {
             setCustomDraftScript(undefined);
             setPreviewInvoice(inv);
@@ -467,6 +701,11 @@ export default function App() {
           onToggleMarkPaid={handleToggleMarkPaid}
           onTogglePauseReminders={handleTogglePauseReminders}
           onDeleteInvoice={handleDeleteInvoice}
+          onBulkMarkPaid={handleBulkMarkPaid}
+          onBulkPauseReminders={handleBulkPauseReminders}
+          onBulkDelete={handleBulkDelete}
+          onSaveInvoiceNote={handleSaveInvoiceNote}
+          onBatchDispatchReminders={handleBatchDispatchReminders}
         />
 
       </main>
@@ -512,14 +751,12 @@ export default function App() {
         settings={settings}
         onSaveSettings={(newSettings) => {
           setSettings(newSettings);
-          if (currentUser) {
-            saveSettingsToFirestore(currentUser.uid, newSettings);
-          }
           showToast('ChaserFlow settings and email templates updated!', 'success');
         }}
         onResetDemoData={handleResetDemoData}
         onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
         onOpenSmartDispatcher={() => setIsSmartDispatcherOpen(true)}
+        onOpenBackupSync={() => setIsBackupSyncOpen(true)}
       />
 
       {/* AI Modals */}
@@ -554,17 +791,12 @@ export default function App() {
         }}
       />
 
-      {/* Google Sheets Modal */}
+      {/* Spreadsheet / CSV Modal */}
       <GoogleSheetsModal
         isOpen={isGoogleSheetsOpen}
         onClose={() => setIsGoogleSheetsOpen(false)}
         invoices={invoices}
-        currentUser={currentUser}
-        cachedAccessToken={cachedToken}
-        onSignIn={handleGoogleSignIn}
-        onSignOut={handleSignOut}
         onImportInvoices={handleImportInvoices}
-        isSigningIn={isSigningInGoogle}
       />
 
       {/* Client Reliability & Scoring Modal */}
@@ -591,9 +823,6 @@ export default function App() {
         onSaveCadence={(stages) => {
           const updated = { ...settings, cadenceStages: stages };
           setSettings(updated);
-          if (currentUser) {
-            saveSettingsToFirestore(currentUser.uid, updated);
-          }
           showToast('Updated automated escalation cadence stages!', 'success');
         }}
       />
@@ -607,9 +836,6 @@ export default function App() {
         onUpdateSettings={(newSettings) => {
           const updated = { ...settings, ...newSettings };
           setSettings(updated);
-          if (currentUser) {
-            saveSettingsToFirestore(currentUser.uid, updated);
-          }
           showToast('Smart working hours & guard rules updated!', 'success');
         }}
         onTriggerDispatchNow={(invoice) => {
@@ -619,9 +845,6 @@ export default function App() {
         }}
         onAutomatedCheckComplete={(result) => {
           setInvoices(result.updatedInvoices);
-          if (currentUser && result.updatedInvoices.length > 0) {
-            batchSaveInvoicesToFirestore(currentUser.uid, result.updatedInvoices);
-          }
           if (result.errorCount > 0) {
             showToast(result.summaryMessage, 'error');
           } else if (result.dispatchedCount > 0) {
@@ -630,6 +853,54 @@ export default function App() {
             showToast(result.summaryMessage, 'info');
           }
         }}
+      />
+
+      {/* 1-Click Backup, Restore & Multi-Device Cloud Database Sync Modal */}
+      <BackupSyncModal
+        isOpen={isBackupSyncOpen}
+        onClose={() => setIsBackupSyncOpen(false)}
+        invoices={invoices}
+        settings={settings}
+        onUpdateInvoices={(updatedInvoices) => {
+          setInvoices(updatedInvoices);
+          showToast(`Synchronized ledger (${updatedInvoices.length} invoices)!`, 'success');
+        }}
+        onUpdateSettings={(updatedSettings) => {
+          setSettings(updatedSettings);
+          showToast('Updated workspace configuration & email templates!', 'success');
+        }}
+      />
+
+      {/* Global Quick Command Palette (Cmd+K / Ctrl+K) */}
+      <CommandPaletteModal
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        invoices={invoices}
+        settings={settings}
+        onOpenNewInvoice={() => setIsNewInvoiceOpen(true)}
+        onOpenRiskRadar={() => setIsRiskRadarOpen(true)}
+        onOpenGoogleSheets={() => setIsGoogleSheetsOpen(true)}
+        onOpenBackupSync={() => setIsBackupSyncOpen(true)}
+        onOpenClientReliability={() => {
+          setSelectedClientEmailForScore(undefined);
+          setIsClientReliabilityOpen(true);
+        }}
+        onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
+        onSimulateCronRun={handleSimulateCronRun}
+        onOpenInvoicePreview={(inv) => {
+          setCustomDraftScript(undefined);
+          setPreviewInvoice(inv);
+        }}
+        onOpenClientPortal={(inv) => setPortalInvoice(inv)}
+        onOpenPaymentInfo={() => setIsGlobalPaymentInfoOpen(true)}
+      />
+
+      {/* Global Verified Remittance & Payment Details Modal */}
+      <PaymentInfoModal
+        isOpen={isGlobalPaymentInfoOpen}
+        invoices={invoices}
+        onClose={() => setIsGlobalPaymentInfoOpen(false)}
+        settings={settings}
       />
 
     </div>

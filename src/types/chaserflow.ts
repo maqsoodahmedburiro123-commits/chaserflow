@@ -42,6 +42,21 @@ export interface AutomatedCheckResult {
   logs: ReminderLog[];
 }
 
+export interface PaymentDetails {
+  method?: 'bank_transfer' | 'ach_wire' | 'zelle' | 'wise' | 'check' | 'portal';
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
+  routingNumber?: string;
+  swiftBic?: string;
+  iban?: string;
+  zelleEmailOrPhone?: string;
+  wiseTagOrEmail?: string;
+  checkPayableTo?: string;
+  checkMailingAddress?: string;
+  instructions?: string;
+}
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -56,6 +71,8 @@ export interface Invoice {
   paidDate?: string;
   serviceDescription: string;
   paymentLink: string;
+  paymentDetails?: PaymentDetails;
+  paymentInstructions?: string;
   remindersPaused: boolean;
   remindersSentCount: number;
   lastReminderDate?: string;
@@ -83,6 +100,7 @@ export interface ChaserSettings {
   businessName: string;
   userEmail: string;
   paymentInstructions: string;
+  paymentDetails?: PaymentDetails;
   defaultTone: EmailTone;
   stripeConnected: boolean;
   enableLateFeeNotice: boolean;
@@ -101,6 +119,14 @@ export interface ChaserSettings {
 
 export type ClientTier = 'A+' | 'A' | 'B' | 'C' | 'D';
 export type ClientRiskLevel = 'low' | 'medium' | 'high' | 'critical';
+
+export interface RecentlyModifiedState {
+  invoiceIds: string[];
+  actionType: 'bulk_paid' | 'bulk_unpaid' | 'bulk_delete' | 'bulk_pause' | 'bulk_resume' | 'delete' | 'mark_paid' | 'restored';
+  description: string;
+  timestamp: number;
+  previousInvoices: Invoice[];
+}
 
 export interface ClientScore {
   clientEmail: string;
