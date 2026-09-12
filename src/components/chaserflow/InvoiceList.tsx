@@ -1,13 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense, lazy } from 'react';
 import { Invoice, InvoiceStatus, ChaserSettings, RecentlyModifiedState, ReminderLog } from '../../types/chaserflow';
 import { getClientScoreByEmail } from '../../lib/clientScoring';
-import { generateInvoicePdf, generateReceiptPdf } from '../../lib/pdfGenerator';
 import { DEFAULT_CHASER_SETTINGS } from '../../data/defaultInvoices';
 import { useTheme } from '../../context/ThemeContext';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
-import { PaymentInfoModal } from './PaymentInfoModal';
 import { BatchChaseModal } from './BatchChaseModal';
 import { InvoiceNoteModal } from './InvoiceNoteModal';
+import { ModalLoadingFallback } from './ModalLoadingFallback';
+
+// PaymentInfoModal is also opened from App.tsx. Importing it only via lazy()
+// here (never statically) lets Rollup finally split it into its own
+// on-demand chunk instead of pinning it into whichever bundle happens to
+// import it first — TypeScript still fully type-checks the props passed to
+// it below from the dynamically-imported module's own types.
+const PaymentInfoModal = lazy(() =>
+  import('./PaymentInfoModal').then((m) => ({ default: m.PaymentInfoModal }))
+);
 import { 
   Search, 
   CheckCircle2, 
@@ -699,7 +707,12 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
                     <button
                       type="button"
                       id={`download-pdf-btn-${invoice.id}`}
-                      onClick={() => {
+                      onClick={async () => {
+                        // Loaded on demand: jsPDF (+ autotable) is a sizable dependency
+                        // that most page loads never need, so it's excluded from the
+                        // main bundle and only fetched the first time someone actually
+                        // downloads a PDF.
+                        const { generateInvoicePdf, generateReceiptPdf } = await import('../../lib/pdfGenerator');
                         if (isPaid) {
                           generateReceiptPdf(invoice, settings || DEFAULT_CHASER_SETTINGS);
                         } else {
@@ -1031,12 +1044,16 @@ export const InvoiceList: React.FC<InvoiceListProps> = ({
       />
 
       {/* Safe Payment Information & Options Modal */}
-      <PaymentInfoModal
-        isOpen={!!paymentInfoInvoices}
-        invoices={paymentInfoInvoices || []}
-        onClose={() => setPaymentInfoInvoices(null)}
-        settings={settings || DEFAULT_CHASER_SETTINGS}
-      />
+      {!!paymentInfoInvoices && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <PaymentInfoModal
+            isOpen={!!paymentInfoInvoices}
+            invoices={paymentInfoInvoices || []}
+            onClose={() => setPaymentInfoInvoices(null)}
+            settings={settings || DEFAULT_CHASER_SETTINGS}
+          />
+        </Suspense>
+      )}
 
       {/* Batch Polite Chaser Modal */}
       <BatchChaseModal

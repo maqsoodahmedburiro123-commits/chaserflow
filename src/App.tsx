@@ -3,28 +3,60 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Invoice, ChaserSettings, ReminderLog, CadenceStage, RecentlyModifiedState } from './types/chaserflow';
 import { INITIAL_INVOICES, DEFAULT_CHASER_SETTINGS, generateEmailTemplate } from './data/defaultInvoices';
 import { ChaserHeader } from './components/chaserflow/ChaserHeader';
 import { StatsBar } from './components/chaserflow/StatsBar';
 import { InvoiceList } from './components/chaserflow/InvoiceList';
-import { InvoiceFormModal } from './components/chaserflow/InvoiceFormModal';
-import { ReminderPreviewModal } from './components/chaserflow/ReminderPreviewModal';
-import { ClientPortalModal } from './components/chaserflow/ClientPortalModal';
-import { SettingsModal } from './components/chaserflow/SettingsModal';
-import { AiRiskRadarModal } from './components/chaserflow/AiRiskRadarModal';
-import { AiExcuseAssistantModal } from './components/chaserflow/AiExcuseAssistantModal';
-import { GoogleSheetsModal } from './components/chaserflow/GoogleSheetsModal';
-import { ClientReliabilityModal } from './components/chaserflow/ClientReliabilityModal';
-import { CadenceBuilderModal } from './components/chaserflow/CadenceBuilderModal';
-import { SmartDispatcherModal } from './components/chaserflow/SmartDispatcherModal';
-import { BackupSyncModal } from './components/chaserflow/BackupSyncModal';
-import { CommandPaletteModal } from './components/chaserflow/CommandPaletteModal';
-import { PaymentInfoModal } from './components/chaserflow/PaymentInfoModal';
+import { LandingHero } from './components/chaserflow/LandingHero';
+import { ModalLoadingFallback } from './components/chaserflow/ModalLoadingFallback';
 import { executeAutomatedEmailCheck, diagnoseInvoiceEmails } from './lib/smartDispatcher';
 import { CheckCircle2, Info, AlertCircle, RotateCcw, X } from 'lucide-react';
 import { useTheme } from './context/ThemeContext';
+
+// Code-split every modal surface so the initial bundle only ships what's
+// needed for first paint (landing hero + dashboard shell). Each modal's
+// JavaScript is fetched the first time it's actually opened, not upfront.
+const InvoiceFormModal = lazy(() =>
+  import('./components/chaserflow/InvoiceFormModal').then((m) => ({ default: m.InvoiceFormModal }))
+);
+const ReminderPreviewModal = lazy(() =>
+  import('./components/chaserflow/ReminderPreviewModal').then((m) => ({ default: m.ReminderPreviewModal }))
+);
+const ClientPortalModal = lazy(() =>
+  import('./components/chaserflow/ClientPortalModal').then((m) => ({ default: m.ClientPortalModal }))
+);
+const SettingsModal = lazy(() =>
+  import('./components/chaserflow/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
+const AiRiskRadarModal = lazy(() =>
+  import('./components/chaserflow/AiRiskRadarModal').then((m) => ({ default: m.AiRiskRadarModal }))
+);
+const AiExcuseAssistantModal = lazy(() =>
+  import('./components/chaserflow/AiExcuseAssistantModal').then((m) => ({ default: m.AiExcuseAssistantModal }))
+);
+const GoogleSheetsModal = lazy(() =>
+  import('./components/chaserflow/GoogleSheetsModal').then((m) => ({ default: m.GoogleSheetsModal }))
+);
+const ClientReliabilityModal = lazy(() =>
+  import('./components/chaserflow/ClientReliabilityModal').then((m) => ({ default: m.ClientReliabilityModal }))
+);
+const CadenceBuilderModal = lazy(() =>
+  import('./components/chaserflow/CadenceBuilderModal').then((m) => ({ default: m.CadenceBuilderModal }))
+);
+const SmartDispatcherModal = lazy(() =>
+  import('./components/chaserflow/SmartDispatcherModal').then((m) => ({ default: m.SmartDispatcherModal }))
+);
+const BackupSyncModal = lazy(() =>
+  import('./components/chaserflow/BackupSyncModal').then((m) => ({ default: m.BackupSyncModal }))
+);
+const CommandPaletteModal = lazy(() =>
+  import('./components/chaserflow/CommandPaletteModal').then((m) => ({ default: m.CommandPaletteModal }))
+);
+const PaymentInfoModal = lazy(() =>
+  import('./components/chaserflow/PaymentInfoModal').then((m) => ({ default: m.PaymentInfoModal }))
+);
 
 export interface ToastAction {
   label: string;
@@ -645,6 +677,9 @@ export default function App() {
         </div>
       )}
 
+      {/* Marketing Landing Page: hero, lead capture, trust bar, how-it-works */}
+      <LandingHero />
+
       {/* Main App Navigation Header */}
       <ChaserHeader
         onOpenNewInvoice={() => setIsNewInvoiceOpen(true)}
@@ -717,191 +752,244 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modals */}
-      <InvoiceFormModal
-        isOpen={isNewInvoiceOpen}
-        onClose={() => setIsNewInvoiceOpen(false)}
-        onSaveInvoice={handleSaveNewInvoice}
-        nextInvoiceNumber={nextInvoiceNumber}
-      />
+      {/* Modals — each is code-split and only mounted (and its JS fetched) once its
+          trigger condition becomes true, keeping the initial dashboard bundle lean. */}
+      {isNewInvoiceOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <InvoiceFormModal
+            isOpen={isNewInvoiceOpen}
+            onClose={() => setIsNewInvoiceOpen(false)}
+            onSaveInvoice={handleSaveNewInvoice}
+            nextInvoiceNumber={nextInvoiceNumber}
+          />
+        </Suspense>
+      )}
 
-      <ReminderPreviewModal
-        isOpen={!!previewInvoice}
-        onClose={() => {
-          setPreviewInvoice(null);
-          setCustomDraftScript(undefined);
-        }}
-        invoice={previewInvoice}
-        settings={settings}
-        onSendReminder={handleSendReminder}
-        initialCustomScript={customDraftScript}
-      />
+      {!!previewInvoice && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <ReminderPreviewModal
+            isOpen={!!previewInvoice}
+            onClose={() => {
+              setPreviewInvoice(null);
+              setCustomDraftScript(undefined);
+            }}
+            invoice={previewInvoice}
+            settings={settings}
+            onSendReminder={handleSendReminder}
+            initialCustomScript={customDraftScript}
+          />
+        </Suspense>
+      )}
 
-      <ClientPortalModal
-        isOpen={!!portalInvoice}
-        onClose={() => setPortalInvoice(null)}
-        invoice={portalInvoice}
-        settings={settings}
-        onMarkPaid={handleToggleMarkPaid}
-      />
+      {!!portalInvoice && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <ClientPortalModal
+            isOpen={!!portalInvoice}
+            onClose={() => setPortalInvoice(null)}
+            invoice={portalInvoice}
+            settings={settings}
+            onMarkPaid={handleToggleMarkPaid}
+          />
+        </Suspense>
+      )}
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onSaveSettings={(newSettings) => {
-          setSettings(newSettings);
-          showToast('ChaserFlow settings and email templates updated!', 'success');
-        }}
-        onResetDemoData={handleResetDemoData}
-        onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
-        onOpenSmartDispatcher={() => setIsSmartDispatcherOpen(true)}
-        onOpenBackupSync={() => setIsBackupSyncOpen(true)}
-      />
+      {isSettingsOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <SettingsModal
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            settings={settings}
+            onSaveSettings={(newSettings) => {
+              setSettings(newSettings);
+              showToast('ChaserFlow settings and email templates updated!', 'success');
+            }}
+            onResetDemoData={handleResetDemoData}
+            onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
+            onOpenSmartDispatcher={() => setIsSmartDispatcherOpen(true)}
+            onOpenBackupSync={() => setIsBackupSyncOpen(true)}
+          />
+        </Suspense>
+      )}
 
       {/* AI Modals */}
-      <AiRiskRadarModal
-        isOpen={isRiskRadarOpen}
-        onClose={() => setIsRiskRadarOpen(false)}
-        invoices={invoices}
-        onOpenReminder={(invoice) => {
-          setCustomDraftScript(undefined);
-          setPreviewInvoice(invoice);
-        }}
-        onOpenExcuseAssistant={(invoice) => {
-          setExcuseAssistantInvoice(invoice);
-        }}
-        onChaseInvoice={(invoice) => {
-          setCustomDraftScript(undefined);
-          setPreviewInvoice(invoice);
-        }}
-      />
+      {isRiskRadarOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <AiRiskRadarModal
+            isOpen={isRiskRadarOpen}
+            onClose={() => setIsRiskRadarOpen(false)}
+            invoices={invoices}
+            onOpenReminder={(invoice) => {
+              setCustomDraftScript(undefined);
+              setPreviewInvoice(invoice);
+            }}
+            onOpenExcuseAssistant={(invoice) => {
+              setExcuseAssistantInvoice(invoice);
+            }}
+            onChaseInvoice={(invoice) => {
+              setCustomDraftScript(undefined);
+              setPreviewInvoice(invoice);
+            }}
+          />
+        </Suspense>
+      )}
 
-      <AiExcuseAssistantModal
-        isOpen={!!excuseAssistantInvoice}
-        onClose={() => setExcuseAssistantInvoice(null)}
-        invoice={excuseAssistantInvoice}
-        settings={settings}
-        onApplyScript={handleApplyExcuseScript}
-        onApplyScriptToReminder={(inv, script) => {
-          setCustomDraftScript(script);
-          setPreviewInvoice(inv);
-          setExcuseAssistantInvoice(null);
-          showToast('Loaded AI counter-script into Chaser reminder drafter!', 'success');
-        }}
-      />
+      {!!excuseAssistantInvoice && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <AiExcuseAssistantModal
+            isOpen={!!excuseAssistantInvoice}
+            onClose={() => setExcuseAssistantInvoice(null)}
+            invoice={excuseAssistantInvoice}
+            settings={settings}
+            onApplyScript={handleApplyExcuseScript}
+            onApplyScriptToReminder={(inv, script) => {
+              setCustomDraftScript(script);
+              setPreviewInvoice(inv);
+              setExcuseAssistantInvoice(null);
+              showToast('Loaded AI counter-script into Chaser reminder drafter!', 'success');
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Spreadsheet / CSV Modal */}
-      <GoogleSheetsModal
-        isOpen={isGoogleSheetsOpen}
-        onClose={() => setIsGoogleSheetsOpen(false)}
-        invoices={invoices}
-        onImportInvoices={handleImportInvoices}
-      />
+      {isGoogleSheetsOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <GoogleSheetsModal
+            isOpen={isGoogleSheetsOpen}
+            onClose={() => setIsGoogleSheetsOpen(false)}
+            invoices={invoices}
+            onImportInvoices={handleImportInvoices}
+          />
+        </Suspense>
+      )}
 
       {/* Client Reliability & Scoring Modal */}
-      <ClientReliabilityModal
-        isOpen={isClientReliabilityOpen}
-        onClose={() => {
-          setIsClientReliabilityOpen(false);
-          setSelectedClientEmailForScore(undefined);
-        }}
-        invoices={invoices}
-        initialClientEmail={selectedClientEmailForScore}
-        onChaseInvoice={(invoice) => {
-          setCustomDraftScript(undefined);
-          setPreviewInvoice(invoice);
-          setIsClientReliabilityOpen(false);
-        }}
-      />
+      {isClientReliabilityOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <ClientReliabilityModal
+            isOpen={isClientReliabilityOpen}
+            onClose={() => {
+              setIsClientReliabilityOpen(false);
+              setSelectedClientEmailForScore(undefined);
+            }}
+            invoices={invoices}
+            initialClientEmail={selectedClientEmailForScore}
+            onChaseInvoice={(invoice) => {
+              setCustomDraftScript(undefined);
+              setPreviewInvoice(invoice);
+              setIsClientReliabilityOpen(false);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Escalation Cadence Builder Modal */}
-      <CadenceBuilderModal
-        isOpen={isCadenceBuilderOpen}
-        onClose={() => setIsCadenceBuilderOpen(false)}
-        settings={settings}
-        onSaveCadence={(stages) => {
-          const updated = { ...settings, cadenceStages: stages };
-          setSettings(updated);
-          showToast('Updated automated escalation cadence stages!', 'success');
-        }}
-      />
+      {isCadenceBuilderOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <CadenceBuilderModal
+            isOpen={isCadenceBuilderOpen}
+            onClose={() => setIsCadenceBuilderOpen(false)}
+            settings={settings}
+            onSaveCadence={(stages) => {
+              const updated = { ...settings, cadenceStages: stages };
+              setSettings(updated);
+              showToast('Updated automated escalation cadence stages!', 'success');
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Smart Timing & Working Hours Dispatcher Modal */}
-      <SmartDispatcherModal
-        isOpen={isSmartDispatcherOpen}
-        onClose={() => setIsSmartDispatcherOpen(false)}
-        invoices={invoices}
-        settings={settings}
-        onUpdateSettings={(newSettings) => {
-          const updated = { ...settings, ...newSettings };
-          setSettings(updated);
-          showToast('Smart working hours & guard rules updated!', 'success');
-        }}
-        onTriggerDispatchNow={(invoice) => {
-          setCustomDraftScript(undefined);
-          setPreviewInvoice(invoice);
-          setIsSmartDispatcherOpen(false);
-        }}
-        onAutomatedCheckComplete={(result) => {
-          setInvoices(result.updatedInvoices);
-          if (result.errorCount > 0) {
-            showToast(result.summaryMessage, 'error');
-          } else if (result.dispatchedCount > 0) {
-            showToast(result.summaryMessage, 'success');
-          } else {
-            showToast(result.summaryMessage, 'info');
-          }
-        }}
-      />
+      {isSmartDispatcherOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <SmartDispatcherModal
+            isOpen={isSmartDispatcherOpen}
+            onClose={() => setIsSmartDispatcherOpen(false)}
+            invoices={invoices}
+            settings={settings}
+            onUpdateSettings={(newSettings) => {
+              const updated = { ...settings, ...newSettings };
+              setSettings(updated);
+              showToast('Smart working hours & guard rules updated!', 'success');
+            }}
+            onTriggerDispatchNow={(invoice) => {
+              setCustomDraftScript(undefined);
+              setPreviewInvoice(invoice);
+              setIsSmartDispatcherOpen(false);
+            }}
+            onAutomatedCheckComplete={(result) => {
+              setInvoices(result.updatedInvoices);
+              if (result.errorCount > 0) {
+                showToast(result.summaryMessage, 'error');
+              } else if (result.dispatchedCount > 0) {
+                showToast(result.summaryMessage, 'success');
+              } else {
+                showToast(result.summaryMessage, 'info');
+              }
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* 1-Click Backup, Restore & Multi-Device Cloud Database Sync Modal */}
-      <BackupSyncModal
-        isOpen={isBackupSyncOpen}
-        onClose={() => setIsBackupSyncOpen(false)}
-        invoices={invoices}
-        settings={settings}
-        onUpdateInvoices={(updatedInvoices) => {
-          setInvoices(updatedInvoices);
-          showToast(`Synchronized ledger (${updatedInvoices.length} invoices)!`, 'success');
-        }}
-        onUpdateSettings={(updatedSettings) => {
-          setSettings(updatedSettings);
-          showToast('Updated workspace configuration & email templates!', 'success');
-        }}
-      />
+      {isBackupSyncOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <BackupSyncModal
+            isOpen={isBackupSyncOpen}
+            onClose={() => setIsBackupSyncOpen(false)}
+            invoices={invoices}
+            settings={settings}
+            onUpdateInvoices={(updatedInvoices) => {
+              setInvoices(updatedInvoices);
+              showToast(`Synchronized ledger (${updatedInvoices.length} invoices)!`, 'success');
+            }}
+            onUpdateSettings={(updatedSettings) => {
+              setSettings(updatedSettings);
+              showToast('Updated workspace configuration & email templates!', 'success');
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Global Quick Command Palette (Cmd+K / Ctrl+K) */}
-      <CommandPaletteModal
-        isOpen={isCommandPaletteOpen}
-        onClose={() => setIsCommandPaletteOpen(false)}
-        invoices={invoices}
-        settings={settings}
-        onOpenNewInvoice={() => setIsNewInvoiceOpen(true)}
-        onOpenRiskRadar={() => setIsRiskRadarOpen(true)}
-        onOpenGoogleSheets={() => setIsGoogleSheetsOpen(true)}
-        onOpenBackupSync={() => setIsBackupSyncOpen(true)}
-        onOpenClientReliability={() => {
-          setSelectedClientEmailForScore(undefined);
-          setIsClientReliabilityOpen(true);
-        }}
-        onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
-        onSimulateCronRun={handleSimulateCronRun}
-        onOpenInvoicePreview={(inv) => {
-          setCustomDraftScript(undefined);
-          setPreviewInvoice(inv);
-        }}
-        onOpenClientPortal={(inv) => setPortalInvoice(inv)}
-        onOpenPaymentInfo={() => setIsGlobalPaymentInfoOpen(true)}
-      />
+      {isCommandPaletteOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <CommandPaletteModal
+            isOpen={isCommandPaletteOpen}
+            onClose={() => setIsCommandPaletteOpen(false)}
+            invoices={invoices}
+            settings={settings}
+            onOpenNewInvoice={() => setIsNewInvoiceOpen(true)}
+            onOpenRiskRadar={() => setIsRiskRadarOpen(true)}
+            onOpenGoogleSheets={() => setIsGoogleSheetsOpen(true)}
+            onOpenBackupSync={() => setIsBackupSyncOpen(true)}
+            onOpenClientReliability={() => {
+              setSelectedClientEmailForScore(undefined);
+              setIsClientReliabilityOpen(true);
+            }}
+            onOpenCadenceBuilder={() => setIsCadenceBuilderOpen(true)}
+            onSimulateCronRun={handleSimulateCronRun}
+            onOpenInvoicePreview={(inv) => {
+              setCustomDraftScript(undefined);
+              setPreviewInvoice(inv);
+            }}
+            onOpenClientPortal={(inv) => setPortalInvoice(inv)}
+            onOpenPaymentInfo={() => setIsGlobalPaymentInfoOpen(true)}
+          />
+        </Suspense>
+      )}
 
       {/* Global Verified Remittance & Payment Details Modal */}
-      <PaymentInfoModal
-        isOpen={isGlobalPaymentInfoOpen}
-        invoices={invoices}
-        onClose={() => setIsGlobalPaymentInfoOpen(false)}
-        settings={settings}
-      />
+      {isGlobalPaymentInfoOpen && (
+        <Suspense fallback={<ModalLoadingFallback />}>
+          <PaymentInfoModal
+            isOpen={isGlobalPaymentInfoOpen}
+            invoices={invoices}
+            onClose={() => setIsGlobalPaymentInfoOpen(false)}
+            settings={settings}
+          />
+        </Suspense>
+      )}
 
     </div>
   );

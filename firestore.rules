@@ -24,5 +24,18 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
     }
+
+    // Public marketing lead capture (landing page email form).
+    // Anyone may create a lead record; nobody can read, edit, or delete
+    // one from the client, so captured emails can't be enumerated or
+    // tampered with. Only well-formed documents are accepted.
+    match /leads/{leadId} {
+      allow create: if request.resource.data.keys().hasAll(['email', 'source', 'createdAt'])
+                    && request.resource.data.email is string
+                    && request.resource.data.email.size() > 3
+                    && request.resource.data.email.size() < 200
+                    && request.resource.data.source is string;
+      allow read, update, delete: if false;
+    }
   }
 }

@@ -1,6 +1,44 @@
 @import "tailwindcss";
 
 /* -------------------------------------------------------------------------- */
+/* Entrance Micro-Animations                                                  */
+/* These utility classes (animate-fadeIn, animate-slideUp, animate-in with    */
+/* fade-in) are referenced across toasts, undo banners, and modals, but were  */
+/* never actually defined anywhere in the project — no Tailwind config, no    */
+/* keyframes — so they silently did nothing. Defined here as plain CSS so     */
+/* every element that already references them animates as intended.          */
+/* -------------------------------------------------------------------------- */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out both;
+}
+
+.animate-slideUp {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-in.fade-in {
+  animation: fadeIn 0.15s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeIn,
+  .animate-slideUp,
+  .animate-in.fade-in {
+    animation: none;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* High-Contrast Light Theme Accessibility System (Well-Lit Office Optimized) */
 /* -------------------------------------------------------------------------- */
 

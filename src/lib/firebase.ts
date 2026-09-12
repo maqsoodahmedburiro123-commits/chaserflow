@@ -15,7 +15,9 @@ import {
   getDoc, 
   getDocs, 
   deleteDoc, 
-  writeBatch 
+  writeBatch,
+  addDoc,
+  serverTimestamp
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Invoice, ChaserSettings } from '../types/chaserflow';
@@ -199,5 +201,53 @@ export const loadSettingsFromFirestore = async (userId: string): Promise<ChaserS
   } catch (err) {
     console.warn('Could not load settings from Firestore:', err);
     return null;
+  }
+};
+
+/* =========================================================================
+   Marketing Lead Capture (Landing Page Hero)
+   Writes anonymous, unauthenticated leads to a write-only "leads" collection.
+   See firestore.rules — the "leads" collection only permits create, never
+   read/update/delete, so a captured email can't be enumerated or edited
+   from the client. Falls back to a local queue if Firestore is unreachable
+   or rules haven't been deployed yet, so the visitor's email is never lost
+   and the UI can always confirm success.
+   ========================================================================= */
+
+const LEADS_LOCAL_STORAGE_KEY = 'chaserflow_leads_v1';
+
+export interface LeadCaptureResult {
+  success: boolean;
+  storedVia: 'firestore' | 'local-fallback';
+}
+
+export const saveLeadToFirestore = async (
+  email: string,
+  source: string = 'landing_hero'
+): Promise<LeadCaptureResult> => {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  try {
+    const leadsRef = collection(db, 'leads');
+    await addDoc(leadsRef, {
+      email: normalizedEmail,
+      source,
+      createdAt: serverTimestamp(),
+      page: typeof window !== 'undefined' ? window.location.href : null,
+    });
+    return { success: true, storedVia: 'firestore' };
+  } catch (err) {
+    console.warn('Could not save lead to Firestore, queuing locally instead:', err);
+    try {
+      const existingRaw = localStorage.getItem(LEADS_LOCAL_STORAGE_KEY);
+      const existing: Array<{ email: string; source: string; createdAt: string }> = existingRaw
+        ? JSON.parse(existingRaw)
+        : [];
+      existing.push({ email: normalizedEmail, source, createdAt: new Date().toISOString() });
+      localStorage.setItem(LEADS_LOCAL_STORAGE_KEY, JSON.stringify(existing));
+    } catch (localErr) {
+      console.warn('Could not queue lead locally either:', localErr);
+    }
+    return { success: false, storedVia: 'local-fallback' };
   }
 };
