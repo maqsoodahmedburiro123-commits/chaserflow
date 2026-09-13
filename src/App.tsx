@@ -10,6 +10,7 @@ import { ChaserHeader } from './components/chaserflow/ChaserHeader';
 import { StatsBar } from './components/chaserflow/StatsBar';
 import { InvoiceList } from './components/chaserflow/InvoiceList';
 import { LandingHero } from './components/chaserflow/LandingHero';
+import { GoogleSyncBanner } from './components/chaserflow/GoogleSyncBanner';
 import { ModalLoadingFallback } from './components/chaserflow/ModalLoadingFallback';
 import { executeAutomatedEmailCheck, diagnoseInvoiceEmails } from './lib/smartDispatcher';
 import { CheckCircle2, Info, AlertCircle, RotateCcw, X } from 'lucide-react';
@@ -73,6 +74,11 @@ export interface ToastData {
 
 const STORAGE_KEY_INVOICES = 'chaserflow_invoices_v1';
 const STORAGE_KEY_SETTINGS = 'chaserflow_settings_v1';
+const GOOGLE_CONNECTED_FLAG = 'chaserflow_google_connected_v1';
+const GOOGLE_NUDGE_DISMISSED_FLAG = 'chaserflow_google_nudge_dismissed_v1';
+// "A few invoices" beyond the sample data that ships with every fresh visit —
+// nudge only once someone has clearly started using this for real.
+const GOOGLE_NUDGE_EXTRA_INVOICES_THRESHOLD = 2;
 
 export default function App() {
   // Load initial state from localStorage or defaults
@@ -103,6 +109,18 @@ export default function App() {
   // State
   const [isGoogleSheetsOpen, setIsGoogleSheetsOpen] = useState(false);
   const [isBackupSyncOpen, setIsBackupSyncOpen] = useState(false);
+
+  // Google account sync (opt-in, offered only after a few real invoices —
+  // ChaserFlow itself never requires an account or login to use).
+  const [googleUser, setGoogleUser] = useState<{ uid: string; email: string | null } | null>(null);
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isGoogleNudgeDismissed, setIsGoogleNudgeDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(GOOGLE_NUDGE_DISMISSED_FLAG) === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   // Modal controls
   const [isNewInvoiceOpen, setIsNewInvoiceOpen] = useState(false);
@@ -205,6 +223,127 @@ export default function App() {
       console.error('Error saving settings to storage', e);
     }
   }, [settings]);
+
+  // Restore a Google-connected session on return visits. Firebase is only
+  // ever loaded (dynamically) for someone who has actually connected before —
+  // everyone else never pays for it, keeping the default local-only path fast.
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    let cancelled = false;
+
+    try {
+      if (localStorage.getItem(GOOGLE_CONNECTED_FLAG) === 'true') {
+        import('./lib/firebase').then(({ initAuth, loadInvoicesFromFirestore, loadSettingsFromFirestore }) => {
+          if (cancelled) return;
+          unsubscribe = initAuth(
+            async (user) => {
+              if (cancelled) return;
+              setGoogleUser({ uid: user.uid, email: user.email });
+              const [cloudInvoices, cloudSettings] = await Promise.all([
+                loadInvoicesFromFirestore(user.uid),
+                loadSettingsFromFirestore(user.uid),
+              ]);
+              if (cancelled) return;
+              if (cloudInvoices.length > 0) setInvoices(cloudInvoices);
+              if (cloudSettings) setSettings(cloudSettings);
+            },
+            () => {
+              if (!cancelled) setGoogleUser(null);
+            }
+          );
+        });
+      }
+    } catch (e) {
+      console.warn('Could not restore Google session', e);
+    }
+
+    return () => {
+      cancelled = true;
+      if (unsubscribe) unsubscribe();
+    };
+    // Intentionally runs once on mount only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // While connected, mirror every local change up to Firestore too.
+  useEffect(() => {
+    if (!googleUser) return;
+    import('./lib/firebase').then(({ batchSaveInvoicesToFirestore }) => {
+      batchSaveInvoicesToFirestore(googleUser.uid, invoices);
+    });
+  }, [invoices, googleUser]);
+
+  useEffect(() => {
+    if (!googleUser) return;
+    import('./lib/firebase').then(({ saveSettingsToFirestore }) => {
+      saveSettingsToFirestore(googleUser.uid, settings);
+    });
+  }, [settings, googleUser]);
+
+  const handleConnectGoogle = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const {
+        googleSignIn,
+        loadInvoicesFromFirestore,
+        loadSettingsFromFirestore,
+        batchSaveInvoicesToFirestore,
+        saveSettingsToFirestore,
+      } = await import('./lib/firebase');
+
+      const result = await googleSignIn();
+      if (!result) {
+        // Popup closed/cancelled — not an error, just no-op.
+        setIsConnectingGoogle(false);
+        return;
+      }
+      const { user } = result;
+
+      const cloudInvoices = await loadInvoicesFromFirestore(user.uid);
+      if (cloudInvoices.length > 0) {
+        const cloudSettings = await loadSettingsFromFirestore(user.uid);
+        setInvoices(cloudInvoices);
+        if (cloudSettings) setSettings(cloudSettings);
+        showToast(`Connected as ${user.email} — restored ${cloudInvoices.length} invoice${cloudInvoices.length === 1 ? '' : 's'} from your Google account.`, 'success');
+      } else {
+        await batchSaveInvoicesToFirestore(user.uid, invoices);
+        await saveSettingsToFirestore(user.uid, settings);
+        showToast(`Connected as ${user.email} — your ${invoices.length} invoice${invoices.length === 1 ? '' : 's'} ${invoices.length === 1 ? 'is' : 'are'} now backed up.`, 'success');
+      }
+
+      setGoogleUser({ uid: user.uid, email: user.email });
+      localStorage.setItem(GOOGLE_CONNECTED_FLAG, 'true');
+    } catch (err: any) {
+      showToast(err?.message || 'Could not connect to Google. Please try again.', 'error');
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
+  const handleDisconnectGoogle = async () => {
+    try {
+      const { logout } = await import('./lib/firebase');
+      await logout();
+    } catch (e) {
+      console.warn('Error signing out of Google', e);
+    }
+    setGoogleUser(null);
+    try {
+      localStorage.setItem(GOOGLE_CONNECTED_FLAG, 'false');
+    } catch {
+      // ignore
+    }
+    showToast('Disconnected from Google. Your invoices remain saved on this device.', 'info');
+  };
+
+  const handleDismissGoogleNudge = () => {
+    setIsGoogleNudgeDismissed(true);
+    try {
+      localStorage.setItem(GOOGLE_NUDGE_DISMISSED_FLAG, 'true');
+    } catch {
+      // ignore
+    }
+  };
 
   // Actions
   const handleSaveNewInvoice = (newInvoice: Invoice) => {
@@ -679,6 +818,17 @@ export default function App() {
 
       {/* Marketing Landing Page: hero, lead capture, trust bar, how-it-works */}
       <LandingHero />
+
+      {/* Local-first by default; offers a Google backup once it's clearly needed */}
+      <GoogleSyncBanner
+        shouldOffer={!isGoogleNudgeDismissed && invoices.length >= INITIAL_INVOICES.length + GOOGLE_NUDGE_EXTRA_INVOICES_THRESHOLD}
+        isConnected={!!googleUser}
+        connectedEmail={googleUser?.email ?? null}
+        isConnecting={isConnectingGoogle}
+        onConnect={handleConnectGoogle}
+        onDisconnect={handleDisconnectGoogle}
+        onDismiss={handleDismissGoogleNudge}
+      />
 
       {/* Main App Navigation Header */}
       <ChaserHeader
